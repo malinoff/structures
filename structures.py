@@ -752,8 +752,7 @@ class Adapted(Subconstruct):
     def _build_stream(self, obj, stream, context):
         if self.before_build is not None:
             obj = self.before_build(obj)
-        self.construct._build_stream(obj, stream, context)
-        return obj
+        return self.construct._build_stream(obj, stream, context)
 
     def _parse_stream(self, stream, context):
         obj = self.construct._parse_stream(stream, context)
@@ -1233,6 +1232,8 @@ class Line(Subconstruct):
         b'foo\r\n'
         >>> l.parse(_)
         b'foo'
+        >>> l.parse(b'bar\r\nbaz\r\n')
+        b'bar'
 
     :param raw: If True, no latin-1 encoding/decoding happens.
 
@@ -1243,7 +1244,7 @@ class Line(Subconstruct):
         construct = Adapted(
             Repeat(
                 Bytes(1), start=0, stop=sys.maxsize,
-                until=lambda items: items[-2:] == b'\r\n',
+                until=lambda items: items[-2:] == [b'\r', b'\n'],
             ),
             before_build=lambda obj: obj + b'\r\n',
             after_parse=lambda obj: b''.join(obj[:-2]),
