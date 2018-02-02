@@ -11,7 +11,7 @@ def from_python(obj):
 def to_python(obj):
    if obj['length'] == -1:
        return None
-    return obj['data']
+   return obj['data']
 
 simple_string = Line()
 
