@@ -194,3 +194,5 @@ And the correctness of all types:
     [[1, 2, 3], ['Foo', RedisError('Bar',)]]
     >>> message.parse(b'*3\r\n$3\r\nfoo\r\n$-1\r\n$3\r\nbar\r\n')
     [b'foo', None, b'bar']
+
+A complete module can be found in `<examples/redis.py>`_.
