@@ -5,6 +5,8 @@ from binascii import hexlify
 from struct import pack, unpack, error as struct_error
 from collections import ChainMap, Sequence, OrderedDict
 
+__version__ = '0.9'
+
 CLASS_NAMESPACE_ORDERED = sys.version_info < (3, 6)
 
 
