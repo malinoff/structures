@@ -16,3 +16,4 @@ pytest-cov = "*"
 gitchangelog = "*"
 "flake8" = "*"
 "e1839a8" = {path = ".", editable = true}
+wheel = "*"
