@@ -393,7 +393,7 @@ class Integer(Construct):
         >>> Integer(1).build(-1)
         Traceback (most recent call last):
         ...
-        structures.BuildingError: ubyte format requires 0 <= number <= 255
+        structures.BuildingError: ...
 
         >>> Integer(3)
         Traceback (most recent call last):
@@ -1178,7 +1178,7 @@ class CString(Subconstruct):
         >>> s.parse(_)
         Traceback (most recent call last):
         ...
-        structures.ParsingError: 'utf-16-le' codec can't decode byte 0x66 in position 0: truncated data
+        structures.ParsingError: 'utf-16...' codec can't decode byte 0x66 in position 0: truncated data
 
     :param encoding: See ``StringEncoded``.
 
