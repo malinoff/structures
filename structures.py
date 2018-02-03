@@ -7,7 +7,7 @@ from collections import ChainMap, Sequence, OrderedDict
 
 __version__ = '0.9'
 
-CLASS_NAMESPACE_ORDERED = sys.version_info < (3, 6)
+CLASS_NAMESPACE_ORDERED = sys.version_info >= (3, 6)
 
 
 class Construct:
