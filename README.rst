@@ -27,7 +27,7 @@
     >>> bmp.sizeof(context={'width': 10, 'height': 10})
     105
 
-More sophisticated, real-world examples live in `<examples>`_ directory.
+More sophisticated, real-world examples live in `examples <https://github.com/malinoff/structures>`_ directory.
 
 Available Constructs
 --------------------
@@ -62,4 +62,4 @@ This can be a class with a (failing) example in its docstring.
 Even if it's not valid python code - your example will help to understand the intention.
 Having an initial implementation of your feature will greatly reduce the time needed to make your feature appear in the next release.
 
-A detailed guide on how to contribute can be found in `<CONTRIBUTING.rst>`_.
+A detailed guide on how to contribute can be found in `CONTRIBUTING.rst <https://github.com/malinoff/structures/blob/master/CONTRIBUTING.rst>`_.
