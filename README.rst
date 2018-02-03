@@ -62,9 +62,9 @@ However, we would like to follow python errors semantics and define a custom exc
     ...     after_parse=lambda obj: RedisError(obj),
     ... )
     >>> error.parse(b'Error message\r\n')
-    RedisError('Error message',)
+    RedisError('Error message'...)
     >>> error.parse(b"ERR unknown command 'foobar'\r\n")
-    RedisError("ERR unknown command 'foobar'",)
+    RedisError("ERR unknown command 'foobar'"...)
     >>> error.build(RedisError('an error'))
     b'an error\r\n'
 
@@ -191,7 +191,7 @@ And the correctness of all types:
     >>> message.parse(b'$6\r\nfoobar\r\n')  # bulk string
     b'foobar'
     >>> message.parse(b'*2\r\n*3\r\n:1\r\n:2\r\n:3\r\n*2\r\n+Foo\r\n-Bar\r\n')  # complex array
-    [[1, 2, 3], ['Foo', RedisError('Bar',)]]
+    [[1, 2, 3], ['Foo', RedisError('Bar'...)]]
     >>> message.parse(b'*3\r\n$3\r\nfoo\r\n$-1\r\n$3\r\nbar\r\n')
     [b'foo', None, b'bar']
 
