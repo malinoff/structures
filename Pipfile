@@ -13,3 +13,5 @@ name = "pypi"
 
 pytest = "*"
 pytest-cov = "*"
+gitchangelog = "*"
+"flake8" = "*"

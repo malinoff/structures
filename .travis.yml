@@ -18,6 +18,8 @@ matrix:
       env: TOXENV=py36
     - python: "pypy3"
       env: TOXENV=pypy3
+    - python: "3.6"
+      env: TOXENV=codestyle
     # Prevent breakage by a new release
     - python: "3.6-dev"
       env: TOXENV=py36
