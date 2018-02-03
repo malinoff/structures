@@ -8,24 +8,28 @@
 
 ``structures`` is a Python package that allows you to declaratively describe binary data structures (like a network protocol or a file format), and to use that declaration to process binary data: to build bytes from python objects, to parse bytes to python objects and to calculate size of the described structure.
 
-.. code-block:: pycon
+.. code-block:: python
 
-    >>> from structures import Struct, Const, Integer, Contextual, RepeatExactly, Bytes
-    >>> class BMP(Struct):
-    ...     signature = Const(b"BMP")  # 3 constant bytes
-    ...     width = Integer(1)  # 1 byte
-    ...     height = Integer(1)  # 1 byte
-    ...     pixels = Contextual(Bytes, lambda ctx: ctx['width'] * ctx['height'])  #  width * height bytes
-    >>> bmp = BMP()
-    >>> bmp.build({'width': 3, 'height': 2, 'pixels': b'\x07\x08\t\x0b\x0c\r'})
-    b'BMP\x03\x02\x07\x08\t\x0b\x0c\r'
-    >>> bmp.parse(b'BMP\x03\x02\x07\x08\t\x0b\x0c\r') == {
-    ...     'signature': b'BMP', 'width': 3, 'height': 2,
-    ...     'pixels': b'\x07\x08\t\x0b\x0c\r',
-    ... }
-    True
-    >>> bmp.sizeof(context={'width': 10, 'height': 10})
-    105
+    from structures import Struct, Const, Integer, Contextual, RepeatExactly, Bytes
+    
+    class BMP(Struct):
+        signature = Const(b"BMP")  # 3 constant bytes
+        width = Integer(1)  # 1 byte
+        height = Integer(1)  # 1 byte
+        pixels = Contextual(Bytes, lambda ctx: ctx['width'] * ctx['height'])  #  width * height bytes
+    
+    bmp = BMP()
+    bmp.build({'width': 3, 'height': 2, 'pixels': b'\x07\x08\t\x0b\x0c\r'})
+    # => b'BMP\x03\x02\x07\x08\t\x0b\x0c\r'
+    
+    bmp.parse(b'BMP\x03\x02\x07\x08\t\x0b\x0c\r') == {
+        'signature': b'BMP', 'width': 3, 'height': 2,
+        'pixels': b'\x07\x08\t\x0b\x0c\r',
+    }
+    # => True
+    
+    bmp.sizeof(context={'width': 10, 'height': 10})
+    # => 105
 
 More sophisticated, real-world examples live in `examples <https://github.com/malinoff/structures>`_ directory.
 
