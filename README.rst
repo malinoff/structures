@@ -185,7 +185,7 @@ And the correctness of all types:
     >>> message.parse(b'+OK\r\n')  # simple string
     'OK'
     >>> message.parse(b'-Error message\r\n')  # error
-    RedisError('Error message',)
+    RedisError('Error message'...)
     >>> message.parse(b':1000\r\n')  # integer
     1000
     >>> message.parse(b'$6\r\nfoobar\r\n')  # bulk string
