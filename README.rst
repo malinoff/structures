@@ -11,7 +11,7 @@
 .. code-block:: pycon
 
     >>> from structures import Struct, Const, Integer, Contextual, RepeatExactly, Bytes
-    >>> class BMP(Struct)
+    >>> class BMP(Struct):
     ...     signature = Const(b"BMP")  # 3 constant bytes
     ...     width = Integer(1)  # 1 byte
     ...     height = Integer(1)  # 1 byte
