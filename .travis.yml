@@ -34,7 +34,7 @@ matrix:
     python: "nightly"
 
 install:
-  - pip install tox
+  - pip install -U setuptools tox
 
 script:
   - tox
