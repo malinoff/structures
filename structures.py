@@ -3,13 +3,14 @@ import pdb
 from io import BytesIO
 from binascii import hexlify
 from struct import pack, unpack, error as struct_error
-from collections import ChainMap, Sequence, OrderedDict
+from collections import ChainMap, OrderedDict, Sequence
 
 __version__ = '0.9'
 
 CLASS_NAMESPACE_ORDERED = sys.version_info >= (3, 6)
 
 
+# Base classes.
 class Construct:
     """
     Base class for all kinds of constructs.
@@ -536,7 +537,39 @@ class Float(Construct):
         return 'Float({}, byteorder={!r})'.format(self.length, self.byteorder)
 
 
-# Repeaters, adapters and padders
+class Padding(Subconstruct):
+    r"""
+    Null bytes that are being ignored during building/parsing.
+
+        >>> import os
+        >>> p = Padding(4)
+        >>> p
+        Padding(4, padchar=b'\x00', direction='right')
+        >>> p.build(os.urandom(16))
+        b'\x00\x00\x00\x00'
+        >>> p.parse(b'\x00\x00\x00\x00')
+        >>> p.sizeof()
+        4
+
+    :param padchar: Pad using this char. Default is b'\x00' (zero byte).
+
+    :param direction: Pad in this direction. Must be 'right', 'left',
+    or 'center'. Default is 'right'.
+
+    """
+    __slots__ = Subconstruct.__slots__
+
+    def __init__(self, length: int, padchar=b'\x00', direction='right'):
+        super().__init__(Padded(Pass(), length, padchar, direction))
+
+    def _repr(self):
+        padded = self.construct  # type: Padded
+        return 'Padding({}, padchar={!r}, direction={!r})'.format(
+            padded.length, padded.padchar, padded.direction,
+        )
+
+
+# Adapters.
 class Repeat(Subconstruct):
     r"""
     Repeat a construct for the specified range of times (semantics follows
@@ -808,8 +841,8 @@ class Prefixed(Subconstruct):
         return self.construct._parse_stream(stream2, context)
 
     def _sizeof(self, context):
-        return self.length_field._sizeof(context) + \
-               self.construct._sizeof(context)
+        length_size = self.length_field._sizeof(context)
+        return length_size + self.construct._sizeof(context)
 
     def _repr(self):
         return 'Prefixed({}, length_field={})'.format(
@@ -899,38 +932,6 @@ class Padded(Subconstruct):
         )
 
 
-class Padding(Subconstruct):
-    r"""
-    Null bytes that are being ignored during building/parsing.
-
-        >>> import os
-        >>> p = Padding(4)
-        >>> p
-        Padding(4, padchar=b'\x00', direction='right')
-        >>> p.build(os.urandom(16))
-        b'\x00\x00\x00\x00'
-        >>> p.parse(b'\x00\x00\x00\x00')
-        >>> p.sizeof()
-        4
-
-    :param padchar: Pad using this char. Default is b'\x00' (zero byte).
-
-    :param direction: Pad in this direction. Must be 'right', 'left',
-    or 'center'. Default is 'right'.
-
-    """
-    __slots__ = Subconstruct.__slots__
-
-    def __init__(self, length: int, padchar=b'\x00', direction='right'):
-        super().__init__(Padded(Pass(), length, padchar, direction))
-
-    def _repr(self):
-        padded = self.construct  # type: Padded
-        return 'Padding({}, padchar={!r}, direction={!r})'.format(
-            padded.length, padded.padchar, padded.direction,
-        )
-
-
 class Aligned(Padded):
     r"""
     Appends additional null bytes to achieve a length that is
@@ -967,7 +968,7 @@ class Aligned(Padded):
             raise ParsingError(
                 'must read exactly {!r}, got {!r}'.format(
                     self.padchar * padlen, padding,
-                    )
+                )
             )
         return obj
 
@@ -1263,82 +1264,7 @@ class Line(Subconstruct):
         return 'Line()'
 
 
-# Structs
-class Contextual(Construct):
-    r"""
-    Construct that makes other construct dependent of the context.
-    Useful in structs.
-
-        >>> c = Contextual(Integer, lambda ctx: ctx['length'], byteorder='big')
-        >>> c
-        Contextual(Integer, <function <lambda> at ...>, byteorder='big')
-        >>> c.build(1, context={'length': 1})
-        b'\x01'
-        >>> c.build(1, context={'length': 2})
-        b'\x00\x01'
-        >>> c.build(1)
-        Traceback (most recent call last):
-        ...
-        structures.ContextualError: 'length'
-        >>> c.sizeof(context={'length': 4})
-        4
-        >>> c.sizeof()
-        Traceback (most recent call last):
-        ...
-        structures.ContextualError: 'length'
-
-    :param to_construct: Construct subclass to be instantiated during
-    building/parsing.
-
-    :param *args_funcs: Functions of context (or constant values) to be
-    called during building/parsing, returned values form positional arguments
-    to be passed to ``to_construct`` class.
-
-    :param **kwargs_funcs: Functions of context (or constant values) to be
-    called during building/parsing, returned values form keyword arguments
-    to be passed to ``to_construct`` class.
-
-    """
-    __slots__ = Construct.__slots__ + ('to_construct', 'args_funcs',
-                                       'kwargs_funcs')
-
-    def __init__(self, to_construct, *args_funcs, **kwargs_funcs):
-        super().__init__()
-        self.to_construct = to_construct
-        self.args_funcs = args_funcs
-        self.kwargs_funcs = kwargs_funcs
-
-    def _evaluate(self, context):
-        try:
-            args = [func(context) if callable(func) else func
-                    for func in self.args_funcs]
-            kwargs = {name: func(context) if callable(func) else func
-                      for name, func in self.kwargs_funcs.items()}
-        except Exception as exc:
-            raise ContextualError(str(exc))
-        return self.to_construct(*args, **kwargs)
-
-    def _build_stream(self, obj, stream, context):
-        construct = self._evaluate(context)
-        return construct._build_stream(obj, stream, context)
-
-    def _parse_stream(self, stream, context):
-        construct = self._evaluate(context)
-        return construct._parse_stream(stream, context)
-
-    def _sizeof(self, context):
-        construct = self._evaluate(context)
-        return construct._sizeof(context)
-
-    def _repr(self):
-        return 'Contextual({}, {}, {})'.format(
-            self.to_construct.__name__,
-            ', '.join(repr(func) for func in self.args_funcs),
-            ', '.join('{}={!r}'.format(name, func)
-                      for name, func in self.kwargs_funcs.items()),
-        )
-
-
+# Structs.
 class StructMeta(type):
     """
     Metaclass for Struct, a mandatory machinery to maintain an ordered
@@ -1504,6 +1430,126 @@ class Struct(Construct, metaclass=StructMeta):
         )
 
 
+class Contextual(Construct):
+    r"""
+    Construct that makes other construct dependent of the context.
+    Useful in structs.
+
+        >>> c = Contextual(Integer, lambda ctx: ctx['length'], byteorder='big')
+        >>> c
+        Contextual(Integer, <function <lambda> at ...>, byteorder='big')
+        >>> c.build(1, context={'length': 1})
+        b'\x01'
+        >>> c.build(1, context={'length': 2})
+        b'\x00\x01'
+        >>> c.build(1)
+        Traceback (most recent call last):
+        ...
+        structures.ContextualError: 'length'
+        >>> c.sizeof(context={'length': 4})
+        4
+        >>> c.sizeof()
+        Traceback (most recent call last):
+        ...
+        structures.ContextualError: 'length'
+
+    :param to_construct: Construct subclass to be instantiated during
+    building/parsing.
+
+    :param *args_funcs: Functions of context (or constant values) to be
+    called during building/parsing, returned values form positional arguments
+    to be passed to ``to_construct`` class.
+
+    :param **kwargs_funcs: Functions of context (or constant values) to be
+    called during building/parsing, returned values form keyword arguments
+    to be passed to ``to_construct`` class.
+
+    """
+    __slots__ = Construct.__slots__ + ('to_construct', 'args_funcs',
+                                       'kwargs_funcs')
+
+    def __init__(self, to_construct, *args_funcs, **kwargs_funcs):
+        super().__init__()
+        self.to_construct = to_construct
+        self.args_funcs = args_funcs
+        self.kwargs_funcs = kwargs_funcs
+
+    def _evaluate(self, context):
+        try:
+            args = [func(context) if callable(func) else func
+                    for func in self.args_funcs]
+            kwargs = {name: func(context) if callable(func) else func
+                      for name, func in self.kwargs_funcs.items()}
+        except Exception as exc:
+            raise ContextualError(str(exc))
+        return self.to_construct(*args, **kwargs)
+
+    def _build_stream(self, obj, stream, context):
+        construct = self._evaluate(context)
+        return construct._build_stream(obj, stream, context)
+
+    def _parse_stream(self, stream, context):
+        construct = self._evaluate(context)
+        return construct._parse_stream(stream, context)
+
+    def _sizeof(self, context):
+        construct = self._evaluate(context)
+        return construct._sizeof(context)
+
+    def _repr(self):
+        return 'Contextual({}, {}, {})'.format(
+            self.to_construct.__name__,
+            ', '.join(repr(func) for func in self.args_funcs),
+            ', '.join('{}={!r}'.format(name, func)
+                      for name, func in self.kwargs_funcs.items()),
+        )
+
+
+class Computed(Construct):
+    r"""
+    Computed fields do not participate in building, but return computed values
+    when parsing and populate the context with computed values:
+
+        >>> class Example(Struct):
+        ...     x = Integer(1)
+        ...     y = Integer(1)
+        ...     x_plus_y = Computed(lambda ctx: ctx['x'] + ctx['y'])
+        ...     z = Contextual(Bytes, lambda ctx: ctx['x_plus_y'])
+        >>> example = Example()
+        >>> example.parse(b'\x01\x02foo') == {'x': 1, 'y': 2, 'z': b'foo', 'x_plus_y': 3}
+        True
+
+        >>> c = Computed(b'foo')
+        >>> c
+        Computed(b'foo')
+        >>> c.sizeof()
+        0
+
+    :param value: Computed value. A function of context can be specified
+    to compute values dynamically.
+
+    """
+    __slots__ = Construct.__slots__ + ('value',)
+
+    def __init__(self, value):
+        super().__init__()
+        self.value = value
+
+    def _build_stream(self, obj, stream, context):
+        if obj is None:
+            obj = self.value(context) if callable(self.value) else self.value
+        return obj
+
+    def _parse_stream(self, stream, context):
+        return self.value(context) if callable(self.value) else self.value
+
+    def _sizeof(self, context):
+        return 0
+
+    def _repr(self):
+        return 'Computed({!r})'.format(self.value)
+
+
 # Conditionals
 class Const(Subconstruct):
     r"""
@@ -1571,51 +1617,6 @@ class Const(Subconstruct):
         return 'Const({}, value={!r})'.format(
             self.construct, self.value
         )
-
-
-class Computed(Construct):
-    r"""
-    Computed fields do not participate in building, but return computed values
-    when parsing and populate the context with computed values:
-
-        >>> class Example(Struct):
-        ...     x = Integer(1)
-        ...     y = Integer(1)
-        ...     x_plus_y = Computed(lambda ctx: ctx['x'] + ctx['y'])
-        ...     z = Contextual(Bytes, lambda ctx: ctx['x_plus_y'])
-        >>> example = Example()
-        >>> example.parse(b'\x01\x02foo') == {'x': 1, 'y': 2, 'z': b'foo', 'x_plus_y': 3}
-        True
-
-        >>> c = Computed(b'foo')
-        >>> c
-        Computed(b'foo')
-        >>> c.sizeof()
-        0
-
-    :param value: Computed value. A function of context can be specified
-    to compute values dynamically.
-
-    """
-    __slots__ = Construct.__slots__ + ('value',)
-
-    def __init__(self, value):
-        super().__init__()
-        self.value = value
-
-    def _build_stream(self, obj, stream, context):
-        if obj is None:
-            obj = self.value(context) if callable(self.value) else self.value
-        return obj
-
-    def _parse_stream(self, stream, context):
-        return self.value(context) if callable(self.value) else self.value
-
-    def _sizeof(self, context):
-        return 0
-
-    def _repr(self):
-        return 'Computed({!r})'.format(self.value)
 
 
 class Raise(Construct):
