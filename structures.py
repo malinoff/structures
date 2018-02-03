@@ -1178,7 +1178,7 @@ class CString(Subconstruct):
         >>> s.parse(_)
         Traceback (most recent call last):
         ...
-        structures.ParsingError: 'utf-16...' codec can't decode byte 0x66 in position 0: truncated data
+        structures.ParsingError: 'utf...' codec can't decode byte 0x66 in position 0: truncated data
 
     :param encoding: See ``StringEncoded``.
 
