@@ -47,7 +47,7 @@ Tests
 - Currently all tests are implemented as examples in docstrings and are tested using pytest & doctest.
 - To run the test suite, all you need is a recent tox_.
   It will ensure the test suite runs with all dependencies against all Python versions just as it will on Travis CI.
-  If you lack some Python versions, you can can always limit the environments like ``tox -e py27,py35`` (in that case you may want to look into pyenv_, which makes it very easy to install many different Python versions in parallel).
+  If you lack some Python versions, you can can always limit the environments like ``tox -e py35,py36`` (in that case you may want to look into pyenv_, which makes it very easy to install many different Python versions in parallel).
 
 Submitting Bugs and Bug Fixes
 -----------------------------
