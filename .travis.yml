@@ -38,3 +38,6 @@ install:
 
 script:
   - tox
+
+notification:
+  email: false

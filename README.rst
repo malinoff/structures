@@ -17,13 +17,15 @@
     ...     height = Integer(1)  # 1 byte
     ...     pixels = Contextual(Bytes, lambda ctx: ctx['width'] * ctx['height'])  #  width * height bytes
     >>> bmp = BMP()
-    >>> obj = {'width': 3, 'height': 2, 'pixels': b'\x07\x08\t\x0b\x0c\r'}
-    >>> bmp.build(obj)
+    >>> bmp.build({'width': 3, 'height': 2, 'pixels': b'\x07\x08\t\x0b\x0c\r'})
     b'BMP\x03\x02\x07\x08\t\x0b\x0c\r'
-    >>> bmp.parse(b'BMP\x03\x02\x07\x08\t\x0b\x0c\r') == obj
+    >>> bmp.parse(b'BMP\x03\x02\x07\x08\t\x0b\x0c\r') == {
+    ...     'signature': b'BMP', 'width': 3, 'height': 2,
+    ...     'pixels': b'\x07\x08\t\x0b\x0c\r',
+    ... }
     True
     >>> bmp.sizeof(context={'width': 10, 'height': 10})
-    25
+    105
 
 More sophisticated, real-world examples live in `<examples>`_ directory.
 
