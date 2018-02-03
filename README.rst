@@ -29,7 +29,7 @@
 
 More sophisticated, real-world examples live in `<examples>`_ directory.
 
-Available constructs
+Available Constructs
 --------------------
 
 * Primitive: Pass, Flag, Bytes, Integer, Float, Padding, Const
@@ -45,10 +45,10 @@ You can find usage examples in constructs docstrings.
 
 All docstrings, examples, and even this readme are tested using doctest.
 
-How to contribute
+How To Contribute
 -----------------
 
-This project uses Pull Requests only for all kinds of contributions.
+This project uses Pull Requests for all kinds of contributions.
 
 You have a question? Make a pull request with an example of structure that confuses you.
 This way we will improve the docs and examples so another person won't be confused.
