@@ -638,21 +638,22 @@ class Repeat(Subconstruct):
                 '[{}, {}), got {}'.format(self.start, self.stop, len(obj))
             )
         predicate = self.until
-        stream2 = BytesIO()
         items = []
+        build_stream = self.construct._build_stream
         for item in obj:
-            self.construct._build_stream(item, stream2, context)
+            build_stream(item, stream, context)
             items.append(item)
             if predicate is not None and predicate(items):
                 break
-        stream.write(stream2.getvalue())
 
     def _parse_stream(self, stream, context) -> list:
         predicate = self.until
         obj = []
+        parse_stream = self.construct._parse_stream
+        stop = self.stop - 1
         try:
-            while len(obj) < self.stop - 1:
-                item = self.construct._parse_stream(stream, context)
+            while len(obj) < stop:
+                item = parse_stream(stream, context)
                 obj.append(item)
                 if predicate is not None and predicate(obj):
                     break
@@ -1393,10 +1394,10 @@ class Struct(Construct, metaclass=StructMeta):
         if not self._embedded:
             context = context.new_child(obj)
         for name, field in self.fields.items():
-            if field._embedded:
-                subobj = obj
-            else:
+            if not field._embedded:
                 subobj = obj.get(name)
+            else:
+                subobj = obj
             ctx_value = field._build_stream(subobj, stream, context)
             if ctx_value is not None:
                 context[name] = ctx_value
@@ -1407,11 +1408,11 @@ class Struct(Construct, metaclass=StructMeta):
         obj = {}
         for name, field in self.fields.items():
             subobj = field._parse_stream(stream, context)
-            if field._embedded:
+            if not field._embedded:
+                context[name] = obj[name] = subobj
+            else:
                 obj.update(subobj)
                 context.update(subobj)
-            else:
-                context[name] = obj[name] = subobj
         return obj
 
     def _sizeof(self, context):
@@ -1428,9 +1429,9 @@ class Contextual(Construct):
     Construct that makes other construct dependent of the context.
     Useful in structs.
 
-        >>> c = Contextual(Integer, lambda ctx: ctx['length'], byteorder='big')
+        >>> c = Contextual(Integer, lambda ctx: (ctx['length'], 'big'))
         >>> c
-        Contextual(Integer, <function <lambda> at ...>, byteorder='big')
+        Contextual(Integer, <function <lambda> at ...>)
         >>> c.build(1, context={'length': 1})
         b'\x01'
         >>> c.build(1, context={'length': 2})
@@ -1458,43 +1459,47 @@ class Contextual(Construct):
     to be passed to ``to_construct`` class.
 
     """
-    __slots__ = Construct.__slots__ + ('to_construct', 'args_funcs',
-                                       'kwargs_funcs')
+    __slots__ = Construct.__slots__ + ('to_construct', 'args_func')
 
-    def __init__(self, to_construct, *args_funcs, **kwargs_funcs):
+    def __init__(self, to_construct, args_func):
         super().__init__()
         self.to_construct = to_construct
-        self.args_funcs = args_funcs
-        self.kwargs_funcs = kwargs_funcs
-
-    def _evaluate(self, context):
-        try:
-            args = [func(context) if callable(func) else func
-                    for func in self.args_funcs]
-            kwargs = {name: func(context) if callable(func) else func
-                      for name, func in self.kwargs_funcs.items()}
-        except Exception as exc:
-            raise ContextualError(str(exc))
-        return self.to_construct(*args, **kwargs)
+        self.args_func = args_func
 
     def _build_stream(self, obj, stream, context):
-        construct = self._evaluate(context)
+        try:
+            args = self.args_func(context)
+        except Exception as exc:
+            raise ContextualError(str(exc))
+        if not isinstance(args, (list, tuple)):
+            args = [args]
+        construct = self.to_construct(*args)
         return construct._build_stream(obj, stream, context)
 
     def _parse_stream(self, stream, context):
-        construct = self._evaluate(context)
+        try:
+            args = self.args_func(context)
+        except Exception as exc:
+            raise ContextualError(str(exc))
+        if not isinstance(args, (list, tuple)):
+            args = [args]
+        construct = self.to_construct(*args)
         return construct._parse_stream(stream, context)
 
     def _sizeof(self, context):
-        construct = self._evaluate(context)
+        try:
+            args = self.args_func(context)
+        except Exception as exc:
+            raise ContextualError(str(exc))
+        if not isinstance(args, (list, tuple)):
+            args = [args]
+        construct = self.to_construct(*args)
         return construct._sizeof(context)
 
     def _repr(self):
-        return 'Contextual({}, {}, {})'.format(
+        return 'Contextual({}, {})'.format(
             self.to_construct.__name__,
-            ', '.join(repr(func) for func in self.args_funcs),
-            ', '.join('{}={!r}'.format(name, func)
-                      for name, func in self.kwargs_funcs.items()),
+            self.args_func,
         )
 
 
