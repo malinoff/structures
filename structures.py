@@ -63,9 +63,7 @@ class Construct:
             context = Context(context)
         try:
             self._build_stream(obj, stream, context)
-        except ContextualError:
-            raise
-        except BuildingError:
+        except Error:
             raise
         except Exception as exc:
             raise BuildingError(str(exc))
@@ -83,9 +81,7 @@ class Construct:
             context = Context(context)
         try:
             return self._parse_stream(stream, context)
-        except ContextualError:
-            raise
-        except ParsingError:
+        except Error:
             raise
         except Exception as exc:
             raise ParsingError(str(exc))
@@ -102,9 +98,7 @@ class Construct:
             context = Context(context)
         try:
             return self._sizeof(context)
-        except ContextualError:
-            raise
-        except SizeofError:
+        except Error:
             raise
         except Exception as exc:
             raise SizeofError(str(exc))
@@ -247,14 +241,6 @@ class Pass(Construct):
         return 'Pass()'
 
 
-def _stream_read(stream, length):
-    data = stream.read(length)
-    if length != -1 and len(data) != length:
-        raise ParsingError('could not read enough bytes, '
-                           'expected {}, found {}'.format(length, len(data)))
-    return data
-
-
 class Flag(Construct):
     r"""
     Build and parse a single byte, interpreting 0 as ``False``
@@ -279,7 +265,11 @@ class Flag(Construct):
         stream.write(b'\x01' if obj else b'\x00')
 
     def _parse_stream(self, stream, context):
-        data = _stream_read(stream, 1)
+        data = stream.read(1)
+        if data == b'':
+            raise ParsingError(
+                'could not read enough bytes, expected 1, found 0'
+            )
         return data != b'\x00'
 
     def _sizeof(self, context):
@@ -350,11 +340,13 @@ class Bytes(Construct):
         stream.write(obj)
 
     def _parse_stream(self, stream, context) -> bytes:
-        obj = _stream_read(stream, self.length)
-        if self.length != -1 and len(obj) < self.length:
-            raise ParsingError('must parse {!r} bytes, got {!r}'.format(
-                self.length, len(obj)
-            ))
+        obj = stream.read(self.length)
+        if self.length != -1 and len(obj) != self.length:
+            raise ParsingError(
+                'could not read enough bytes, expected {}, found {}'.format(
+                    self.length, len(obj)
+                )
+            )
         return obj
 
     def _sizeof(self, context):
@@ -449,17 +441,11 @@ class Integer(Construct):
         }[(length, signed)]
 
     def _build_stream(self, obj: int, stream, context):
-        try:
-            stream.write(pack(self._fmt, obj))
-        except struct_error as exc:
-            raise BuildingError(str(exc))
+        stream.write(pack(self._fmt, obj))
 
     def _parse_stream(self, stream, context):
-        data = _stream_read(stream, self.length)
-        try:
-            return unpack(self._fmt, data)[0]
-        except struct_error as exc:
-            raise ParsingError(str(exc))
+        data = stream.read(self.length)
+        return unpack(self._fmt, data)[0]
 
     def _sizeof(self, context):
         return self.length
@@ -518,17 +504,11 @@ class Float(Construct):
         self._fmt = _format_map[(length, byteorder)]
 
     def _build_stream(self, obj: float, stream, context):
-        try:
-            stream.write(pack(self._fmt, obj))
-        except struct_error as exc:
-            raise BuildingError('struct.pack failed, reason: {}'.format(exc))
+        stream.write(pack(self._fmt, obj))
 
     def _parse_stream(self, stream, context) -> float:
-        data = _stream_read(stream, self.length)
-        try:
-            return unpack(self._fmt, data)[0]
-        except struct_error as exc:
-            raise ParsingError('struct.unpack failed, reason: {}'.format(exc))
+        data = stream.read(self.length)
+        return unpack(self._fmt, data)[0]
 
     def _sizeof(self, context):
         return self.length
@@ -837,7 +817,14 @@ class Prefixed(Subconstruct):
 
     def _parse_stream(self, stream, context):
         length = self.length_field._parse_stream(stream, context)
-        stream2 = BytesIO(_stream_read(stream, length))
+        data = stream.read(length)
+        if len(data) != length:
+            raise ParsingError(
+                'could not read enough bytes, expected {}, found {}'.format(
+                    length, len(data)
+                )
+            )
+        stream2 = BytesIO(data)
         return self.construct._parse_stream(stream2, context)
 
     def _sizeof(self, context):
@@ -914,7 +901,13 @@ class Padded(Subconstruct):
         return ctx_value
 
     def _parse_stream(self, stream, context):
-        data = _stream_read(stream, self.length)
+        data = stream.read(self.length)
+        if len(data) != self.length:
+            raise ParsingError(
+                'could not read enough bytes, expected {}, found {}'.format(
+                    self.length, len(data)
+                )
+            )
         if self.direction == 'right':
             data = data.rstrip(self.padchar)
         elif self.direction == 'left':
@@ -963,7 +956,7 @@ class Aligned(Padded):
         obj = self.construct._parse_stream(stream, context)
         after = stream.tell()
         padlen = -(after - before) % self.length
-        padding = _stream_read(stream, padlen)
+        padding = stream.read(padlen)
         if padding != self.padchar * padlen:
             raise ParsingError(
                 'must read exactly {!r}, got {!r}'.format(
@@ -2003,7 +1996,7 @@ class Debug(Subconstruct):
     """
     __slots__ = Subconstruct.__slots__ + ('debugger', 'on_exc')
 
-    def __init__(self, construct, debugger=pdb, on_exc=Error):
+    def __init__(self, construct, debugger=pdb, on_exc=Exception):
         super().__init__(construct)
         self.debugger = debugger
         self.on_exc = on_exc
