@@ -2,7 +2,7 @@ import sys
 import pdb
 from io import BytesIO
 from binascii import hexlify
-from struct import pack, unpack, error as struct_error
+from struct import pack, unpack
 from collections import ChainMap, OrderedDict, Sequence
 
 __version__ = '0.9.2dev'
