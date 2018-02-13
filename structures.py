@@ -1,5 +1,6 @@
 import sys
 import pdb
+from math import ceil
 from io import BytesIO
 from binascii import hexlify
 from struct import pack, unpack
@@ -1546,6 +1547,116 @@ class Computed(Construct):
 
     def _repr(self):
         return 'Computed({!r})'.format(self.value)
+
+
+class BitFields(Construct):
+    r"""
+    Build and parse named bit-wise fields. Values are always built from
+    unsigned big-byteorder integers and parsed as unsigned
+    big-byteorder integers.
+
+        >>> b = BitFields('version:4, header_length:4')
+        >>> b
+        BitFields('version:4, header_length:4')
+        >>> b.build({'version': 4, 'header_length': 0})
+        b'\x80'
+        >>> b.parse(b'\x00') == {'version': 0, 'header_length': 0}
+        True
+        >>> b.sizeof()
+        1
+
+    Fields can span over 8 bits, and the whole construct is byte-aligned
+    (i.e. it will read as many bytes as needed and ignore trailing bits that
+    do not have definitions in the spec):
+
+        >>> b = BitFields('foo:12,bar:5')
+        >>> b.sizeof()
+        3
+        >>> b.build({'foo': 4095, 'bar': 31})
+        b'\xff\xff\x80'
+        >>> b.parse(b'\x09\x11\x00') == {'foo': 145, 'bar': 2}
+        True
+
+    You can omit any field during building, in that case 0 will be built.
+    That allows to emulate padding that comes before actual data:
+
+        >>> b = BitFields('padding:7, flag:1')
+        >>> b.parse(b'\x01') == {'padding': 0, 'flag': 1}
+        True
+        >>> b.build({'flag': 0})
+        b'\x00'
+
+    If you try to build from integer that can't be packed into the specified
+    amount of bits, a BuildingError will be raised:
+
+        >>> b.build({'flag': 10})
+        Traceback (most recent call last):
+        ...
+        structures.BuildingError: cannot pack 10 into 1 bit
+
+    Of course, fields bit length must be >=0:
+
+        >>> BitFields('foo:-5')
+        Traceback (most recent call last):
+        ...
+        ValueError: 'foo' bit length must be >= 0, got -5
+
+    :param spec: Fields definition, a comma separated list of
+    name:length-in-bits pairs. Spaces between commas are allowed.
+
+    :param embedded: If True, this construct will be embedded into the
+    enclosed struct.
+
+    """
+
+    def __init__(self, spec, embedded=False):
+        super().__init__()
+        self.spec = spec
+        self._embedded = embedded
+        self.fields = OrderedDict()
+        for field in map(str.strip, spec.split(',')):
+            name, length = field.split(':')
+            self.fields[name] = length = int(length)
+            if length < 0:
+                raise ValueError('{!r} bit length must be >= 0, got {}'.format(
+                    name, length
+                ))
+        self._length = ceil(
+            sum(length for _, length in self.fields.items()) / 8
+        )
+
+    def _build_stream(self, obj, stream, context):
+        bits = []
+        for name, length in self.fields.items():
+            subobj = obj.get(name, 0)
+            bin_subobj = bin(subobj)[2:]
+            if len(bin_subobj) > length:
+                raise BuildingError('cannot pack {} into {} bit{}'.format(
+                    subobj, length, 's' if length > 1 else ''
+                ))
+            bits += bin_subobj
+        data = []
+        bits = ''.join(bits).ljust(self._length * 8, '0')
+        for idx in range(self._length):
+            part = bits[idx * 8:(idx + 1) * 8]
+            data.append(int(part, 2))
+        stream.write(bytes(data))
+
+    def _parse_stream(self, stream, context):
+        data = stream.read(self._length)
+        bits = ''.join(bin(byte)[2:].rjust(8, '0') for byte in data)
+        obj = {}
+        idx = 0
+        for name, length in self.fields.items():
+            obj[name] = int(bits[idx:idx + length], 2)
+            idx += length
+        return obj
+
+    def _sizeof(self, context):
+        return self._length
+
+    def _repr(self):
+        return 'BitFields({!r})'.format(self.spec)
 
 
 # Conditionals
