@@ -110,8 +110,7 @@ class Array(Struct):
         lambda ctx: ctx['length'] != -1,
         Contextual(
             RepeatExactly,
-            construct=lambda ctx: message,
-            n=lambda ctx: ctx['length'],
+            lambda ctx: (message, ctx['length'])
         )
     )
 
