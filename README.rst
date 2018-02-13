@@ -36,6 +36,7 @@ Available Constructs
 * Adapters: Repeat, RepeatExactly, Adapted, Prefixed, Padded, Aligned
 * Strings: String, PascalString, CString, Line
 * Structs: Struct, Contextual, Computed
+* Bit-wise: BitFields
 * Conditionals: If, Switch, Enum, Raise
 * Stream manipulation: Offset, Tell
 * Data transformers: Checksum
