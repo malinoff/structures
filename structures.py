@@ -1594,6 +1594,13 @@ class BitFields(Construct):
         ...
         structures.BuildingError: cannot pack 10 into 1 bit
 
+    Of course, fields bit length must be >=0:
+
+        >>> BitFields('foo:-5')
+        Traceback (most recent call last):
+        ...
+        ValueError: 'foo' bit length must be >= 0, got -5
+
     :param spec: Fields definition, a comma separated list of
     name:length-in-bits pairs. Spaces between commas are allowed.
 
@@ -1609,7 +1616,11 @@ class BitFields(Construct):
         self.fields = OrderedDict()
         for field in map(str.strip, spec.split(',')):
             name, length = field.split(':')
-            self.fields[name] = int(length)
+            self.fields[name] = length = int(length)
+            if length < 0:
+                raise ValueError('{!r} bit length must be >= 0, got {}'.format(
+                    name, length
+                ))
         self._length = ceil(
             sum(length for _, length in self.fields.items()) / 8
         )
