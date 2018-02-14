@@ -1559,7 +1559,7 @@ class BitFields(Construct):
         >>> b
         BitFields('version:4, header_length:4')
         >>> b.build({'version': 4, 'header_length': 0})
-        b'\x80'
+        b'@'
         >>> b.parse(b'\x00') == {'version': 0, 'header_length': 0}
         True
         >>> b.sizeof()
@@ -1601,6 +1601,19 @@ class BitFields(Construct):
         ...
         ValueError: 'foo' bit length must be >= 0, got -5
 
+    You can also embed BitFields into a struct:
+
+        >>> class Entry(Struct):
+        ...     header = BitFields('foo:2,bar:2,length:4', embedded=True)
+        ...     payload = Contextual(Bytes, lambda ctx: ctx['length'])
+        >>> entry = Entry()
+        >>> entry.build({'foo': 2, 'bar': 0, 'length': 3, 'payload': b'baz'})
+        b'\x83baz'
+        >>> entry.parse(b'\x33xxx') == {
+        ...     'foo': 0, 'bar': 3, 'length': 3, 'payload': b'xxx'
+        ... }
+        True
+
     :param spec: Fields definition, a comma separated list of
     name:length-in-bits pairs. Spaces between commas are allowed.
 
@@ -1629,8 +1642,8 @@ class BitFields(Construct):
         bits = []
         for name, length in self.fields.items():
             subobj = obj.get(name, 0)
-            bin_subobj = bin(subobj)[2:]
-            if len(bin_subobj) > length:
+            bin_subobj = bin(subobj)[2:].rjust(length, '0')
+            if len(bin_subobj) != length:
                 raise BuildingError('cannot pack {} into {} bit{}'.format(
                     subobj, length, 's' if length > 1 else ''
                 ))
