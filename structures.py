@@ -8,6 +8,15 @@ from collections import ChainMap, OrderedDict, Sequence
 
 __version__ = '0.9.2dev'
 
+__all__ = ['Construct', 'Subconstruct', 'Context', 'Error',
+           'BuildingError', 'ParsingError', 'SizeofError', 'ContextualError',
+           'Pass', 'Flag', 'Bytes', 'Integer', 'Float', 'Padding',
+           'Repeat', 'RepeatExactly', 'Adapted', 'Prefixed', 'Padded',
+           'Aligned', 'StringEncoded', 'String', 'PascalString', 'CString',
+           'Line', 'Struct', 'Contextual', 'Computed', 'BitFields', 'Const',
+           'Raise', 'If', 'Switch', 'Enum', 'Offset', 'Tell', 'Checksum',
+           'Debug']
+
 CLASS_NAMESPACE_ORDERED = sys.version_info >= (3, 6)
 
 
@@ -421,7 +430,7 @@ class Integer(Construct):
     """
     __slots__ = Construct.__slots__ + ('length', 'byteorder', 'signed', '_fmt')
 
-    def __init__(self, length: int, byteorder: str = 'big', *,
+    def __init__(self, length: int, byteorder: str = 'big',
                  signed: bool = False):
         super().__init__()
         if length not in (1, 2, 4, 8):
@@ -1376,7 +1385,7 @@ class StructMeta(type):
     class namespace and __slots__.
     """
 
-    if not CLASS_NAMESPACE_ORDERED:
+    if not CLASS_NAMESPACE_ORDERED:  # pragma: nocover
         @classmethod
         def __prepare__(mcs, name, bases):
             return OrderedDict()
@@ -1389,9 +1398,8 @@ class StructMeta(type):
         namespace['__struct_fields__'] = fields
         slots = namespace.get('__slots__')
         if slots is None:
-            namespace['__slots__'] = ('embedded',)
-        elif 'embedded' not in slots:
-            namespace['__slots__'] = slots + ('embedded',)
+            # Make sure user defined structs aren't eating memory.
+            namespace['__slots__'] = Construct.__slots__
         return type.__new__(mcs, name, bases, namespace)
 
 
@@ -1548,6 +1556,10 @@ class Contextual(Construct):
         >>> c.build(1, context={'length': 2})
         b'\x00\x01'
         >>> c.build(1)
+        Traceback (most recent call last):
+        ...
+        structures.ContextualError: 'length'
+        >>> c.parse(b'\x00')
         Traceback (most recent call last):
         ...
         structures.ContextualError: 'length'
@@ -1903,12 +1915,27 @@ class If(Construct):
     A conditional building and parsing of a construct depending
     on the predicate.
 
-        >>> i = If(lambda ctx: ctx['flag'], Const(b'True'))
+        >>> i = If(lambda ctx: ctx['flag'], Const(b'True'), Const(b'False'))
         >>> i
-        If(<function <lambda> at ...>, then_construct=Const(Bytes(4), value=b'True'), else_construct=Pass())
+        If(<function <lambda> at ...>, then_construct=Const(Bytes(4), value=b'True'), else_construct=Const(Bytes(5), value=b'False'))
         >>> i.build(None, context={'flag': True})
         b'True'
-        >>> i.parse(b'', context={'flag': False})
+        >>> i.build(None, context={'flag': False})
+        b'False'
+        >>> i.parse(b'True', context={'flag': True})
+        b'True'
+        >>> i.parse(b'False', context={'flag': False})
+        b'False'
+        >>> i.sizeof(context={'flag': True})
+        4
+        >>> i.sizeof(context={'flag': False})
+        5
+
+    An else clause can be omitted, Pass() will be used:
+
+        >>> i = If(lambda ctx: ctx['flag'], Const(b'True'))
+        >>> i
+        If(<function <lambda> at ...>, Const(Bytes(4), value=b'True'))
         >>> i.sizeof(context={'flag': True})
         4
         >>> i.sizeof(context={'flag': False})
@@ -1954,6 +1981,8 @@ class If(Construct):
         return construct._sizeof(context)
 
     def _repr(self):
+        if isinstance(self.else_construct, Pass):
+            return 'If({}, {})'.format(self.predicate, self.then_construct)
         return 'If({}, then_construct={!r}, else_construct={!r})'.format(
             self.predicate, self.then_construct, self.else_construct,
         )
@@ -1968,6 +1997,8 @@ class Switch(Construct):
         ...     lambda ctx: ctx['foo'],
         ...     cases={1: Integer(1), 2: Bytes(3)}
         ... )
+        >>> s
+        Switch(<function <lambda> ...>, cases={1: Integer(...), 2: Bytes(3)})
         >>> s.build(5, context={'foo': 1})
         b'\x05'
         >>> s.build(b'bar', context={'foo': 2})
@@ -1976,6 +2007,23 @@ class Switch(Construct):
         b'baz'
         >>> s.sizeof(context={'foo': 2})
         3
+        >>> s.build(b'baz', context={'foo': 3})
+        Traceback (most recent call last):
+        ...
+        structures.BuildingError: no default case specified
+        >>> s.parse(b'baz', context={'foo': 3})
+        Traceback (most recent call last):
+        ...
+        structures.ParsingError: no default case specified
+
+    You can choose how to process missing cases error by providing default case:
+
+        >>> s = Switch(lambda ctx: None, cases={}, default=Pass())
+        >>> s
+        Switch(<function <lambda> ...>, cases={}, default=Pass())
+        >>> s.build(None)
+        b''
+        >>> s.parse(b'')
 
     :param key: Function of context, used to determine the appropriate case
     to build/parse/calculate sizeof.
@@ -1989,12 +2037,12 @@ class Switch(Construct):
     """
     __slots__ = Construct.__slots__ + ('key', 'cases', 'default')
 
-    def __init__(self, key, cases, *, default=None):
+    def __init__(self, key, cases, default=None):
         super().__init__()
         self.key = key
         self.cases = cases
         if default is None:
-            default = Raise('no switch default case specified')
+            default = Raise('no default case specified')
         self.default = default
 
     def _build_stream(self, obj, stream, context):
@@ -2022,12 +2070,24 @@ class Enum(Subconstruct):
     Like a built-in ``Enum`` class, maps string names to values.
 
         >>> e = Enum(Flag(), cases={'yes': True, 'no': False})
+        >>> e
+        Enum(Flag(), cases={'yes': True, 'no': False})
         >>> e.build('yes')
         b'\x01'
         >>> e.parse(b'\x00')
         'no'
         >>> e.sizeof()
         1
+
+    During building, even if a value is provided instead of a name, an enum
+    will populate context with the name, not with the value.
+
+        >>> class Entry(Struct):
+        ...     foo = Enum(Flag(), cases={'yes': True, 'no': False})
+        ...     bar = Computed(lambda ctx: print('In context:', ctx['foo']))
+        >>> Entry().build({'foo': True})
+        In context: yes
+        b'\x01'
 
     :param construct: Construct used to build/parse/calculate sizeof.
 
@@ -2040,7 +2100,7 @@ class Enum(Subconstruct):
     __slots__ = Subconstruct.__slots__ + ('cases', 'build_cases',
                                           'parse_cases', 'default')
 
-    def __init__(self, construct, cases, *, default=None):
+    def __init__(self, construct, cases, default=None):
         super().__init__(construct)
         # For building we need k -> v and v -> v mapping
         self.cases = cases.copy()
@@ -2049,14 +2109,14 @@ class Enum(Subconstruct):
         # For parsing we need v -> k mapping
         self.parse_cases = {v: k for k, v in cases.items()}
         if default is None:
-            default = Raise('no enum default case specified')
+            default = Raise('no default case specified')
         self.default = default
 
     def _build_stream(self, obj, stream, context):
         obj2 = self.build_cases.get(obj)
         construct = self.default if obj is None else self.construct
         construct._build_stream(obj2, stream, context)
-        # always put in context an enum key, not value
+        # always put in context the name, not value
         return self.parse_cases[obj2]
 
     def _parse_stream(self, stream, context):
