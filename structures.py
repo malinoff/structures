@@ -1080,10 +1080,14 @@ class StringEncoded(Adapted):
         b'foo'
         >>> e.parse(b'bar')
         b'bar'
+        >>> # Python3.4 and pypy3 error with
+        >>> # 'str' does not support the buffer interface
+        >>> # Python3.5+ errors with
+        >>> # a bytes-like object is required, not 'str'
         >>> e.build('baz')
         Traceback (most recent call last):
         ...
-        structures.BuildingError: a bytes-like object is required, not 'str'
+        structures.BuildingError: ...
 
     :param construct: Construct to adapt with encoding/decoding.
 
