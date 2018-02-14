@@ -384,6 +384,10 @@ class Integer(Construct):
         >>> Integer(2, 'little', signed=True).build(-0x10ff)
         b'\x01\xef'
 
+        >>> # pypy3 gives a different error message
+        >>> # argument out of range for 1-byte integer format
+        >>> # python3 gives
+        >>> # ubyte format requires 0 <= number <= 255
         >>> Integer(1).build(-1)
         Traceback (most recent call last):
         ...
