@@ -116,7 +116,7 @@ class Construct:
         """
         if isinstance(item, slice):
             if item.step is not None:
-                raise ValueError('cannot make a Repeat with step')
+                raise ValueError('cannot make a Repeat with a step')
             return Repeat(self, item.start, item.stop)
         if isinstance(item, int):
             return RepeatExactly(self, item)
@@ -126,16 +126,16 @@ class Construct:
             )
         )
 
-    def _build_stream(self, obj, stream, context):
+    def _build_stream(self, obj, stream, context):  # pragma: nocover
         raise NotImplementedError
 
-    def _parse_stream(self, stream, context):
+    def _parse_stream(self, stream, context):  # pragma: nocover
         raise NotImplementedError
 
-    def _sizeof(self, context):
+    def _sizeof(self, context):  # pragma: nocover
         raise NotImplementedError
 
-    def _repr(self):
+    def _repr(self):  # pragma: nocover
         raise NotImplementedError
 
 
@@ -168,7 +168,7 @@ class Subconstruct(Construct):
     def _sizeof(self, context):
         return self.construct._sizeof(context)
 
-    def _repr(self):
+    def _repr(self):  # pragma: nocover
         raise NotImplementedError
 
 
@@ -474,6 +474,17 @@ class Float(Construct):
         >>> Float(8, 'little').build(-1970.31415)
         b"'\xa0\x89\xb0A\xc9\x9e\xc0"
 
+    Providing invalid parameters results in a ValueError:
+
+        >>> Float(5)
+        Traceback (most recent call last):
+        ...
+        ValueError: length must be 4 or 8, got 5
+        >>> Float(4, byteorder='native')
+        Traceback (most recent call last):
+        ...
+        ValueError: byteorder must be 'big' or 'little', got 'native'
+
     :param length: the float is represented using so many number of bytes.
         Currently only 4 and 8 bytes are supported.
 
@@ -493,8 +504,8 @@ class Float(Construct):
             raise ValueError('length must be 4 or 8, got {}'.format(length))
         self.length = length
         if byteorder not in ('big', 'little'):
-            raise ValueError("byteroder must be 'big' or 'little'"
-                             ', got {}'.format(byteorder))
+            raise ValueError("byteorder must be 'big' or 'little'"
+                             ', got {!r}'.format(byteorder))
         self.byteorder = byteorder
         _format_map = {
             (4, 'big'): '>f',
@@ -574,6 +585,8 @@ class Repeat(Subconstruct):
     items.
 
         >>> r = Repeat(Flag(), 1, 5, until=lambda obj: not obj[-1])
+        >>> r
+        Repeat(Flag(), start=1, stop=5, until=<function <lambda> at ...>)
         >>> r.build([True, True, False, True])
         b'\x01\x01\x00'
         >>> r.parse(b'\x01\x00\x00')
@@ -602,6 +615,29 @@ class Repeat(Subconstruct):
 
         >>> Flag()[2:5]
         Repeat(Flag(), start=2, stop=5)
+
+    Providing invalid repeat parameters will throw a ValueError:
+
+        >>> Repeat(Flag(), -1, 0)
+        Traceback (most recent call last):
+        ...
+        ValueError: start must be >= 0, got -1
+        >>> Repeat(Flag(), 0, -1)
+        Traceback (most recent call last):
+        ...
+        ValueError: stop must be >= 0, got -1
+        >>> Repeat(Flag(), 6, 2)
+        Traceback (most recent call last):
+        ...
+        ValueError: stop must be >= start
+        >>> Flag()[2:5:2]
+        Traceback (most recent call last):
+        ...
+        ValueError: cannot make a Repeat with a step
+        >>> Flag()['foo']
+        Traceback (most recent call last):
+        ...
+        ValueError: can make a Repeat only from an int or a slice, got <class 'str'>
 
     :param construct: Construct to repeat.
 
@@ -698,10 +734,14 @@ class RepeatExactly(Repeat):
     Repeat the specified construct exactly n times.
 
         >>> r = RepeatExactly(Flag(), 3)
+        >>> r
+        RepeatExactly(Flag(), 3)
         >>> r.build([True, False, True])
         b'\x01\x00\x01'
         >>> r.parse(b'\x00\x01\x00')
         [False, True, False]
+        >>> r.sizeof()
+        3
 
     An alternative slice-based syntax can be used:
 
@@ -801,6 +841,10 @@ class Prefixed(Subconstruct):
         Traceback (most recent call last):
         ...
         structures.SizeofError: Bytes() has no fixed size
+        >>> p.parse(b'\x06baz')
+        Traceback (most recent call last):
+        ...
+        structures.ParsingError: could not read enough bytes, expected 6, found 3
 
     :param construct: Construct to be prefixed with its length.
 
@@ -852,6 +896,10 @@ class Padded(Subconstruct):
         b'bar'
         >>> p.sizeof()
         6
+        >>> p.parse(b'baz')
+        Traceback (most recent call last):
+        ...
+        structures.ParsingError: could not read enough bytes, expected 6, found 3
 
         >>> p_left = Padded(Bytes(3), 6, padchar=b'X', direction='left')
         >>> p_left.build(b'bar')
@@ -864,6 +912,21 @@ class Padded(Subconstruct):
         b'YbazYY'
         >>> p_center.parse(b'YYdefY')
         b'def'
+
+    Providing invalid parameters results in a ValueError:
+
+        >>> Padded(Bytes(3), -2)
+        Traceback (most recent call last):
+        ...
+        ValueError: length must be >= 0, got -2
+        >>> Padded(Bytes(3), 4, padchar=b'\x00\x00')
+        Traceback (most recent call last):
+        ...
+        ValueError: padchar must be a single-length bytes, got b'\x00\x00'
+        >>> Padded(Bytes(3), 4, direction='up')
+        Traceback (most recent call last):
+        ...
+        ValueError: direction must be 'right', 'left', or 'center', got 'up'
 
     :param construct: A construct to be padded.
 
@@ -880,14 +943,17 @@ class Padded(Subconstruct):
     def __init__(self, construct: Construct, length: int, padchar=b'\x00',
                  direction='right'):
         super().__init__(construct)
+        if length < 0:
+            raise ValueError('length must be >= 0, got {}'.format(length))
         self.length = length
-        self.padchar = padchar
         if len(padchar) != 1:
-            raise ValueError('padchar must be a single-length bytes')
-        self.direction = direction
+            raise ValueError('padchar must be a single-length bytes, '
+                             'got {!r}'.format(padchar))
+        self.padchar = padchar
         if direction not in {'right', 'left', 'center'}:
-            raise ValueError('direction must be right, left, or center, '
-                             'got {}'.format(direction))
+            raise ValueError("direction must be 'right', 'left', or 'center', "
+                             'got {!r}'.format(direction))
+        self.direction = direction
 
     def _build_stream(self, obj, stream, context):
         stream2 = BytesIO()
@@ -939,6 +1005,18 @@ class Aligned(Padded):
         b'foobar\x00\x00'
         >>> b''.join(a.parse(b'foo\x00'))
         b'foo\x00'
+        >>> a.sizeof()
+        Traceback (most recent call last):
+        ...
+        structures.SizeofError: cannot determine size of variable sized Repeat
+
+        >>> a = Aligned(Bytes(6), 4)
+        >>> a.sizeof()
+        8
+        >>> a.parse(b'foobar\x00\x01')
+        Traceback (most recent call last):
+        ...
+        structures.ParsingError: must read padding of b'\x00\x00', got b'\x00\x01'
 
     Parameters are the same as ``Padded``.
 
@@ -961,7 +1039,7 @@ class Aligned(Padded):
         padding = stream.read(padlen)
         if padding != self.padchar * padlen:
             raise ParsingError(
-                'must read exactly {!r}, got {!r}'.format(
+                'must read padding of {!r}, got {!r}'.format(
                     self.padchar * padlen, padding,
                 )
             )
@@ -992,6 +1070,20 @@ class StringEncoded(Adapted):
         'bar'
         >>> e.sizeof()
         3
+
+    If no encoding specified, no encoding/decoding happens.
+
+        >>> e = StringEncoded(Bytes(3))
+        >>> e
+        StringEncoded(Bytes(3))
+        >>> e.build(b'foo')
+        b'foo'
+        >>> e.parse(b'bar')
+        b'bar'
+        >>> e.build('baz')
+        Traceback (most recent call last):
+        ...
+        structures.BuildingError: a bytes-like object is required, not 'str'
 
     :param construct: Construct to adapt with encoding/decoding.
 
@@ -1076,8 +1168,6 @@ class String(Subconstruct):
 
     def __init__(self, length: int, encoding: str = None, padchar=b'\x00',
                  direction='right'):
-        if length < 0:
-            raise ValueError('length must be >= 0, got {}'.format(length))
         variable_bytes = Adapted(
             Bytes(1)[1:length + 1], after_parse=b''.join,
         )
@@ -1118,6 +1208,8 @@ class PascalString(Subconstruct):
     parses from bytes, not strings:
 
         >>> p = PascalString(Integer(1))
+        >>> p
+        PascalString(length_field=Integer(1, byteorder='big', signed=False))
         >>> p.build(b'foo')
         b'\x03foo'
         >>> p.parse(b'\x06foobar')
@@ -1164,6 +1256,16 @@ class CString(Subconstruct):
         Traceback (most recent call last):
         ...
         structures.SizeofError: CString has no fixed size
+
+    You can omit encoding to build/parse raw bytes:
+
+        >>> s = CString()
+        >>> s
+        CString()
+        >>> s.build(b'foo')
+        b'foo\x00'
+        >>> s.parse(b'bar\x00')
+        b'bar'
 
     Note that it is not safe to specify multibyte encodings allowing null byte
     in arbitrary code points like UTF16 or UTF32.
@@ -1621,6 +1723,7 @@ class BitFields(Construct):
     enclosed struct.
 
     """
+    __slots__ = Construct.__slots__ + ('spec', 'fields', '_length')
 
     def __init__(self, spec, embedded=False):
         super().__init__()
