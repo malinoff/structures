@@ -2070,8 +2070,9 @@ class Enum(Subconstruct):
     Like a built-in ``Enum`` class, maps string names to values.
 
         >>> e = Enum(Flag(), cases={'yes': True, 'no': False})
+        >>> # Another python 3.4 only glitch, can't rely on any specific dict order
         >>> e
-        Enum(Flag(), cases={'yes': True, 'no': False})
+        Enum(Flag(), cases={...})
         >>> e.build('yes')
         b'\x01'
         >>> e.parse(b'\x00')
