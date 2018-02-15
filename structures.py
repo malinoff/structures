@@ -2023,7 +2023,8 @@ class Switch(Construct):
         Switch(<function <lambda> ...>, cases={}, default=Pass())
         >>> s.build(None)
         b''
-        >>> s.parse(b'')
+        >>> s.parse(b'') is None
+        True
 
     :param key: Function of context, used to determine the appropriate case
     to build/parse/calculate sizeof.
@@ -2080,6 +2081,28 @@ class Enum(Subconstruct):
         >>> e.sizeof()
         1
 
+    Unexpected names result in error:
+
+        >>> e = Enum(Bytes(3), cases={'x': b'xxx', 'y': b'yyy'})
+        >>> e.build('z')
+        Traceback (most recent call last):
+        ...
+        structures.BuildingError: no default case specified
+        >>> e.parse(b'zzz')
+        Traceback (most recent call last):
+        ...
+        structures.ParsingError: no default case specified
+
+    You can choose how to process missing cases error by providing default case:
+
+        >>> e = Enum(Bytes(3), cases={'x': b'xxx', 'y': b'yyy'}, default=Pass())
+        >>> e
+        Enum(Bytes(3), cases={...}, default=Pass())
+        >>> e.build('z')
+        b''
+        >>> e.parse(b'z') is None
+        True
+
     During building, even if a value is provided instead of a name, an enum
     will populate context with the name, not with the value.
 
@@ -2114,9 +2137,16 @@ class Enum(Subconstruct):
         self.default = default
 
     def _build_stream(self, obj, stream, context):
-        obj2 = self.build_cases.get(obj)
-        construct = self.default if obj is None else self.construct
-        construct._build_stream(obj2, stream, context)
+        try:
+            obj2 = self.build_cases[obj]
+        except KeyError:
+            return self.default._build_stream(obj, stream, context)
+        fallback = stream.tell()
+        try:
+            self.construct._build_stream(obj2, stream, context)
+        except BuildingError:
+            stream.seek(fallback)
+            self.default._build_stream(obj2, stream, context)
         # always put in context the name, not value
         return self.parse_cases[obj2]
 
@@ -2127,8 +2157,9 @@ class Enum(Subconstruct):
         except ParsingError:
             stream.seek(fallback)
             return self.default._parse_stream(stream, context)
-        obj = self.parse_cases.get(obj)
-        if obj is None:
+        try:
+            obj = self.parse_cases[obj]
+        except KeyError:
             stream.seek(fallback)
             return self.default._parse_stream(stream, context)
         return obj
@@ -2159,6 +2190,13 @@ class Offset(Subconstruct):
         b'\x00\x00\x00\x00Z'
         >>> o.sizeof()
         1
+
+    Providing invalid parameters results in a ValueError:
+
+        >>> Offset(Bytes(1), -2)
+        Traceback (most recent call last):
+        ...
+        ValueError: offset must be >= 0, got -2
 
     Size is defined by the size of the provided construct, although it may
     seem that building/parsing do not consume this exact number of bytes.
@@ -2210,13 +2248,28 @@ class Tell(Construct):
     and measure their difference using a Contextual field.
     Mostly useful in structs.
 
+        >>> t = Tell()
+        >>> t
+        Tell()
+        >>> t.build(None)
+        b''
+        >>> stream = BytesIO(b'foobar')
+        >>> stream.seek(3)
+        3
+        >>> t.parse_stream(stream)
+        3
+        >>> t.sizeof()
+        0
+
         >>> class Example(Struct):
         ...     key = Bytes(3)
         ...     pos1 = Tell()
         ...     value = Bytes(3)
         ...     pos2 = Tell()
         >>> example = Example()
-        >>> example.parse(b'foobar') == {'key': b'foo', 'pos1': 3, 'value': b'bar', 'pos2': 6}
+        >>> example.parse(b'foobar') == {
+        ...     'key': b'foo', 'pos1': 3, 'value': b'bar', 'pos2': 6
+        ... }
         True
 
     """
