@@ -6,7 +6,7 @@ from binascii import hexlify
 from struct import pack, unpack
 from collections import ChainMap, OrderedDict, Sequence
 
-__version__ = '0.9.2dev'
+__version__ = '0.9.3'
 
 __all__ = ['Construct', 'Subconstruct', 'Context', 'Error',
            'BuildingError', 'ParsingError', 'SizeofError', 'ContextualError',
