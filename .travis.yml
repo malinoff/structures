@@ -2,7 +2,7 @@ dist: trusty
 sudo: false
 cache:
   directories:
-  - "$HOME/.cache/pip"
+  - '$HOME/.cache/pip'
 language: python
 matrix:
   fast_finish: true
@@ -35,8 +35,8 @@ deploy:
   provider: pypi
   on:
     tags: true
-    python: '3.6'
-  distributions: "sdist bdist_wheel"
+    condition: '$TOXENV = py36'
+  distributions: 'sdist bdist_wheel'
   user: malinoff
   password:
     secure: VYbv39Pp/jEfTL+TWu2rfhD9KuE9flXpnDebkHuB2fwP1IVQ6F47DE981FAxMGiDIlO4KxnIg9bz6NxZfiSfuH+v34LdzWE4IjBhk9UIfnKr64/QgLU/eHCQ4To1uXIo31Z+Z/PAau528PxVvvR/QR3V0kVpFqjeWgeq/QU5Hr/SY3m5eesgrooF9fkZjyLoNcyU3lmAYNv8WTR+hhMYd5kUP343diNrQKwjVWTPMPyVSqITDtwoN0VbzT2r0JtnS8NwQl7B67vNtR8UJ9oT3vHTbaciAvqAVaaIyx3PuNHD7eRGOUfO0fvtl5gsEb7zK9oWIKxvnBCXhU4DjtTN/YCuLBw91Vauj5BGUzerpYpf/9LvEl4z1vwRPomOR7jxL0jfSH/alD3Uf9V7YFbh0V0GVT2ZNDresIKTxq9BT0oNnH/Wcdn+7+YSkWQUVLMHK6EAgTG0eQgp3v2ByVjlUlJ4VmBgt4paelZkwI2SCQjXbsPEkZ4GqwP+U6TKW2grg50Z4BjVh1ELmcs9bTGQ8uk5WZun2x8UHyB+lf30icdB64prHn7vldzl58I1lKCuv2q5/TWqpv/XyEmLSrivsMo9WmyNOP52ZlGOi+ghRCANI5cweil6XRsgwWNJdChK4xxCgNEBpejxrtcOV8O8V/KLq5GIVtiyoZyB8QXoCSc=
