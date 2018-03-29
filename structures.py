@@ -160,7 +160,7 @@ class Subconstruct(Construct):
     :param construct: Wrapped construct.
 
     """
-    __slots__ = Construct.__slots__ + ('construct',)
+    __slots__ = ('construct',)
 
     def __init__(self, construct: Construct):
         super().__init__()
@@ -236,7 +236,7 @@ class Pass(Construct):
         0
 
     """
-    __slots__ = Construct.__slots__
+    __slots__ = ()
 
     def _build_stream(self, obj, stream, context):
         return obj
@@ -269,7 +269,7 @@ class Flag(Construct):
         1
 
     """
-    __slots__ = Construct.__slots__
+    __slots__ = ()
 
     def _build_stream(self, obj, stream, context):
         stream.write(b'\x01' if obj else b'\x00')
@@ -331,7 +331,7 @@ class Bytes(Construct):
     consumes the stream to its end (see examples).
 
     """
-    __slots__ = Construct.__slots__ + ('length',)
+    __slots__ = ('length',)
 
     def __init__(self, length: int = -1):
         super().__init__()
@@ -428,7 +428,7 @@ class Integer(Construct):
     in a BuildingError/ParsingError.
 
     """
-    __slots__ = Construct.__slots__ + ('length', 'byteorder', 'signed', '_fmt')
+    __slots__ = ('length', 'byteorder', 'signed', '_fmt')
 
     def __init__(self, length: int, byteorder: str = 'big',
                  signed: bool = False):
@@ -509,7 +509,7 @@ class Float(Construct):
         as the byte order value.
 
     """
-    __slots__ = Construct.__slots__ + ('length', 'byteorder', '_fmt')
+    __slots__ = ('length', 'byteorder', '_fmt')
 
     def __init__(self, length: int, byteorder: str = 'big'):
         super().__init__()
@@ -666,7 +666,7 @@ class Repeat(Subconstruct):
     predicate function is called during building/parsing.
 
     """
-    __slots__ = Subconstruct.__slots__ + ('start', 'stop', 'until')
+    __slots__ = ('start', 'stop', 'until')
 
     def __init__(self, construct: Construct, start: int, stop: int,
                  until: callable = None):
@@ -771,7 +771,7 @@ class RepeatExactly(Repeat):
     predicate function is called during building/parsing.
 
     """
-    __slots__ = Repeat.__slots__
+    __slots__ = ()
 
     def __init__(self, construct: Construct, n: int, until: callable = None):
         super().__init__(construct, n, n + 1, until)
@@ -809,7 +809,7 @@ class Adapted(Subconstruct):
     Default is None, meaning no parsing adaption is performed.
 
     """
-    __slots__ = Subconstruct.__slots__ + ('before_build', 'after_parse')
+    __slots__ = ('before_build', 'after_parse')
 
     def __init__(self, construct: Construct,
                  before_build: callable = None, after_parse: callable = None):
@@ -864,7 +864,7 @@ class Prefixed(Subconstruct):
     :param length_field: Construct used to build/parse the length.
 
     """
-    __slots__ = Subconstruct.__slots__ + ('length_field',)
+    __slots__ = ('length_field',)
 
     def __init__(self, construct: Construct, length_field: Construct):
         super().__init__(construct)
@@ -896,7 +896,7 @@ class Prefixed(Subconstruct):
         )
 
 
-class Padded(Subconstruct):
+class Padded(Construct):
     r"""
     Appends additional null bytes to achieve a fixed length.
 
@@ -951,11 +951,11 @@ class Padded(Subconstruct):
     'center'. Default is 'right'.
 
     """
-    __slots__ = Subconstruct.__slots__ + ('length', 'padchar', 'direction')
+    __slots__ = ('construct', 'length', 'padchar', 'direction')
 
-    def __init__(self, construct: Construct, length: int, padchar=b'\x00',
-                 direction='right'):
-        super().__init__(construct)
+    def __init__(self, construct: Construct, length: int,
+                 padchar: bytes = b'\x00', direction: str = 'right'):
+        self.construct = construct
         if length < 0:
             raise ValueError('length must be >= 0, got {}'.format(length))
         self.length = length
@@ -1031,10 +1031,8 @@ class Aligned(Padded):
         ...
         structures.ParsingError: must read padding of b'\x00\x00', got b'\x00\x01'
 
-    Parameters are the same as ``Padded``.
-
     """
-    __slots__ = Padded.__slots__
+    __slots__ = ()
 
     def _build_stream(self, obj, stream, context):
         before = stream.tell()
@@ -1109,7 +1107,7 @@ class StringEncoded(Adapted):
 
     """
 
-    __slots__ = Adapted.__slots__ + ('encoding',)
+    __slots__ = ('encoding',)
 
     def __init__(self, construct: Construct, encoding=None):
         encode = decode = None
@@ -1181,7 +1179,7 @@ class String(Subconstruct):
     :param direction: See ``Padded``.
 
     """
-    __slots__ = Subconstruct.__slots__ + ('length',)
+    __slots__ = ('length',)
 
     def __init__(self, length: int, encoding: str = None, padchar=b'\x00',
                  direction='right'):
@@ -1237,7 +1235,7 @@ class PascalString(Subconstruct):
     :param encoding: See ``StringEncoded``.
 
     """
-    __slots__ = Subconstruct.__slots__
+    __slots__ = ()
 
     def __init__(self, length_field: Construct, encoding: str = None):
         super().__init__(StringEncoded(
@@ -1298,7 +1296,7 @@ class CString(Subconstruct):
     :param encoding: See ``StringEncoded``.
 
     """
-    __slots__ = Subconstruct.__slots__
+    __slots__ = ()
 
     def __init__(self, encoding: str = None):
         construct = Adapted(
@@ -1353,7 +1351,7 @@ class Line(Subconstruct):
     :param raw: If True, no latin-1 encoding/decoding happens.
 
     """
-    __slots__ = Subconstruct.__slots__ + ('raw',)
+    __slots__ = ('raw',)
 
     def __init__(self, raw=False):
         construct = Adapted(
@@ -1399,7 +1397,7 @@ class StructMeta(type):
         slots = namespace.get('__slots__')
         if slots is None:
             # Make sure user defined structs aren't eating memory.
-            namespace['__slots__'] = Construct.__slots__
+            namespace['__slots__'] = ()
         return type.__new__(mcs, name, bases, namespace)
 
 
@@ -1500,6 +1498,7 @@ class Struct(Construct, metaclass=StructMeta):
     :param embedded: If True, this struct will be embedded into another struct.
 
     """
+    __slots__ = ()
 
     def __init__(self, *, embedded=False):
         super().__init__()
@@ -1582,7 +1581,7 @@ class Contextual(Construct):
     to be passed to ``to_construct`` class.
 
     """
-    __slots__ = Construct.__slots__ + ('to_construct', 'args_func')
+    __slots__ = ('to_construct', 'args_func')
 
     def __init__(self, to_construct, args_func):
         super().__init__()
@@ -1650,7 +1649,7 @@ class Computed(Construct):
     to compute values dynamically.
 
     """
-    __slots__ = Construct.__slots__ + ('value',)
+    __slots__ = ('value',)
 
     def __init__(self, value):
         super().__init__()
@@ -1743,7 +1742,7 @@ class BitFields(Construct):
     enclosed struct.
 
     """
-    __slots__ = Construct.__slots__ + ('spec', 'fields', '_length')
+    __slots__ = ('spec', 'fields', '_length')
 
     def __init__(self, spec, embedded=False):
         super().__init__()
@@ -1835,7 +1834,7 @@ class Const(Subconstruct):
     :param value: Constant value to be built and parsed.
 
     """
-    __slots__ = Subconstruct.__slots__ + ('value',)
+    __slots__ = ('value',)
 
     def __init__(self, construct, value=None):
         if value is None:
@@ -1891,7 +1890,7 @@ class Raise(Construct):
     ``Contextual`` construct to specify dynamic messages.
 
     """
-    __slots__ = Construct.__slots__ + ('message',)
+    __slots__ = ('message',)
 
     def __init__(self, message):
         super().__init__()
@@ -1950,8 +1949,7 @@ class If(Construct):
     :param else_construct: Negative branch construct.
 
     """
-    __slots__ = Construct.__slots__ + ('predicate', 'then_construct',
-                                       'else_construct')
+    __slots__ = ('predicate', 'then_construct', 'else_construct')
 
     def __init__(self, predicate, then_construct, else_construct=Pass()):
         super().__init__()
@@ -2036,7 +2034,7 @@ class Switch(Construct):
     Default is Raise().
 
     """
-    __slots__ = Construct.__slots__ + ('key', 'cases', 'default')
+    __slots__ = ('key', 'cases', 'default')
 
     def __init__(self, key, cases, default=None):
         super().__init__()
@@ -2121,8 +2119,7 @@ class Enum(Subconstruct):
     Default is Raise().
 
     """
-    __slots__ = Subconstruct.__slots__ + ('cases', 'build_cases',
-                                          'parse_cases', 'default')
+    __slots__ = ('cases', 'build_cases', 'parse_cases', 'default')
 
     def __init__(self, construct, cases, default=None):
         super().__init__(construct)
@@ -2211,7 +2208,7 @@ class Offset(Subconstruct):
     :param offset: Offset to seek the stream to (from the current position).
 
     """
-    __slots__ = Subconstruct.__slots__ + ('offset',)
+    __slots__ = ('offset',)
 
     def __init__(self, construct, offset):
         super().__init__(construct)
@@ -2273,7 +2270,7 @@ class Tell(Construct):
         True
 
     """
-    __slots__ = Construct.__slots__
+    __slots__ = ()
 
     def _build_stream(self, obj, stream, context):
         return stream.tell()
@@ -2303,7 +2300,7 @@ class Checksum(Subconstruct):
         32
 
     """
-    __slots__ = Subconstruct.__slots__ + ('hash_func', 'data_func')
+    __slots__ = ('hash_func', 'data_func')
 
     def __init__(self, construct, hash_func, data_func):
         super().__init__(construct)
@@ -2348,7 +2345,7 @@ class Debug(Subconstruct):
     In case of an error, launch a pdb-compatible debugger.
 
     """
-    __slots__ = Subconstruct.__slots__ + ('debugger', 'on_exc')
+    __slots__ = ('debugger', 'on_exc')
 
     def __init__(self, construct, debugger=pdb, on_exc=Exception):
         super().__init__(construct)
