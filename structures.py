@@ -12,7 +12,7 @@ __all__ = ['Construct', 'Subconstruct', 'Context', 'Error',
            'BuildingError', 'ParsingError', 'SizeofError', 'ContextualError',
            'Pass', 'Flag', 'Bytes', 'Integer', 'Float', 'Padding',
            'Repeat', 'RepeatExactly', 'Adapted', 'Prefixed', 'Padded',
-           'Aligned', 'StringEncoded', 'String', 'PascalString', 'CString',
+           'Aligned', 'String', 'PascalString', 'CString',
            'Line', 'Struct', 'Contextual', 'Computed', 'BitFields', 'Const',
            'Raise', 'If', 'Switch', 'Enum', 'Offset', 'Tell', 'Checksum',
            'Debug']
@@ -542,36 +542,52 @@ class Float(Construct):
         return 'Float({}, byteorder={!r})'.format(self.length, self.byteorder)
 
 
-class Padding(Subconstruct):
+class Padding(Construct):
     r"""
     Null bytes that are being ignored during building/parsing.
 
         >>> import os
         >>> p = Padding(4)
         >>> p
-        Padding(4, padchar=b'\x00', direction='right')
+        Padding(4, padchar=b'\x00')
         >>> p.build(os.urandom(16))
         b'\x00\x00\x00\x00'
         >>> p.parse(b'\x00\x00\x00\x00')
+        b'\x00\x00\x00\x00'
         >>> p.sizeof()
         4
 
     :param padchar: Pad using this char. Default is b'\x00' (zero byte).
 
-    :param direction: Pad in this direction. Must be 'right', 'left',
-    or 'center'. Default is 'right'.
-
     """
-    __slots__ = Subconstruct.__slots__
+    __slots__ = ('length', 'padchar')
 
-    def __init__(self, length: int, padchar=b'\x00', direction='right'):
-        super().__init__(Padded(Pass(), length, padchar, direction))
+    def __init__(self, length: int, padchar: bytes = b'\x00'):
+        super().__init__()
+        if length < 0:
+            raise ValueError('length must be >= 0, got {}'.format(length))
+        self.length = length
+        if len(padchar) != 1:
+            raise ValueError('padchar must be a single-length bytes, '
+                             'got {!r}'.format(padchar))
+        self.padchar = padchar
+
+    def _build_stream(self, obj, stream, context):
+        stream.write(self.padchar * self.length)
+
+    def _parse_stream(self, stream, context):
+        data = stream.read(self.length)
+        padding = self.padchar * self.length
+        if data != padding:
+            raise ParsingError('expected to parse {!r}, got {!r} '
+                               'instead'.format(padding, data))
+        return data
+
+    def _sizeof(self, context):
+        return self.length
 
     def _repr(self):
-        padded = self.construct  # type: Padded
-        return 'Padding({}, padchar={!r}, direction={!r})'.format(
-            padded.length, padded.padchar, padded.direction,
-        )
+        return 'Padding({}, padchar={!r})'.format(self.length, self.padchar)
 
 
 # Adapters.
@@ -902,7 +918,7 @@ class Padded(Construct):
 
         >>> p = Padded(Bytes(3), 6)
         >>> p
-        Padded(Bytes(3), length=6, padchar=b'\x00', direction='right')
+        Padded(Bytes(3), length=6)
         >>> p.build(b'foo')
         b'foo\x00\x00\x00'
         >>> p.parse(b'bar\x00\x00\x00')
@@ -914,71 +930,33 @@ class Padded(Construct):
         ...
         structures.ParsingError: could not read enough bytes, expected 6, found 3
 
-        >>> p_left = Padded(Bytes(3), 6, padchar=b'X', direction='left')
-        >>> p_left.build(b'bar')
-        b'XXXbar'
-        >>> p_left.parse(b'XXXabc')
-        b'abc'
-
-        >>> p_center = Padded(Bytes(3), 6, padchar=b'Y', direction='center')
-        >>> p_center.build(b'baz')
-        b'YbazYY'
-        >>> p_center.parse(b'YYdefY')
-        b'def'
-
     Providing invalid parameters results in a ValueError:
 
         >>> Padded(Bytes(3), -2)
         Traceback (most recent call last):
         ...
         ValueError: length must be >= 0, got -2
-        >>> Padded(Bytes(3), 4, padchar=b'\x00\x00')
-        Traceback (most recent call last):
-        ...
-        ValueError: padchar must be a single-length bytes, got b'\x00\x00'
-        >>> Padded(Bytes(3), 4, direction='up')
-        Traceback (most recent call last):
-        ...
-        ValueError: direction must be 'right', 'left', or 'center', got 'up'
 
     :param construct: A construct to be padded.
 
     :param length: Pad to achieve exactly this number of bytes.
 
-    :param padchar: Pad using this char. Default is b'\x00' (zero byte).
-
-    :param direction: Pad in this direction. Must be 'right', 'left', or
-    'center'. Default is 'right'.
-
     """
-    __slots__ = ('construct', 'length', 'padchar', 'direction')
+    __slots__ = ('construct', 'length')
 
-    def __init__(self, construct: Construct, length: int,
-                 padchar: bytes = b'\x00', direction: str = 'right'):
+    def __init__(self, construct: Construct, length: int):
+        super().__init__()
         self.construct = construct
         if length < 0:
             raise ValueError('length must be >= 0, got {}'.format(length))
         self.length = length
-        if len(padchar) != 1:
-            raise ValueError('padchar must be a single-length bytes, '
-                             'got {!r}'.format(padchar))
-        self.padchar = padchar
-        if direction not in {'right', 'left', 'center'}:
-            raise ValueError("direction must be 'right', 'left', or 'center', "
-                             'got {!r}'.format(direction))
-        self.direction = direction
 
     def _build_stream(self, obj, stream, context):
         stream2 = BytesIO()
         ctx_value = self.construct._build_stream(obj, stream2, context)
         data = stream2.getvalue()
-        if self.direction == 'left':
-            data = data.rjust(self.length, self.padchar)
-        elif self.direction == 'right':
-            data = data.ljust(self.length, self.padchar)
-        elif self.direction == 'center':
-            data = data.center(self.length, self.padchar)
-        stream.write(data)
+        padded_data = data.ljust(self.length, b'\x00')
+        stream.write(padded_data)
         return ctx_value
 
     def _parse_stream(self, stream, context):
@@ -989,31 +967,24 @@ class Padded(Construct):
                     self.length, len(data)
                 )
             )
-        if self.direction == 'right':
-            data = data.rstrip(self.padchar)
-        elif self.direction == 'left':
-            data = data.lstrip(self.padchar)
-        elif self.direction == 'center':
-            data = data.strip(self.padchar)
+        data = data.rstrip(b'\x00')
         return self.construct._parse_stream(BytesIO(data), context)
 
     def _sizeof(self, context):
         return self.length
 
     def _repr(self):
-        return 'Padded({}, length={}, padchar={!r}, direction={!r})'.format(
-            self.construct, self.length, self.padchar, self.direction
-        )
+        return 'Padded({}, length={})'.format(self.construct, self.length)
 
 
-class Aligned(Padded):
+class Aligned(Construct):
     r"""
     Appends additional null bytes to achieve a length that is
     shortest multiple of a length.
 
         >>> a = Aligned(Bytes(1)[2:8], 4)
         >>> a
-        Aligned(Repeat(Bytes(1), start=2, stop=8), length=4, padchar=b'\x00', direction='right')
+        Aligned(Repeat(Bytes(1), start=2, stop=8), length=4)
         >>> a.build(b'foobar')
         b'foobar\x00\x00'
         >>> b''.join(a.parse(b'foo\x00'))
@@ -1032,14 +1003,21 @@ class Aligned(Padded):
         structures.ParsingError: must read padding of b'\x00\x00', got b'\x00\x01'
 
     """
-    __slots__ = ()
+    __slots__ = ('construct', 'length')
+
+    def __init__(self, construct, length: int):
+        super().__init__()
+        self.construct = construct
+        if length < 0:
+            raise ValueError('length must be >= 0, got {}'.format(length))
+        self.length = length
 
     def _build_stream(self, obj, stream, context):
         before = stream.tell()
         ctx_value = self.construct._build_stream(obj, stream, context)
         after = stream.tell()
         padlen = -(after - before) % self.length
-        stream.write(self.padchar * padlen)
+        stream.write(b'\x00' * padlen)
         return ctx_value
 
     def _parse_stream(self, stream, context):
@@ -1048,10 +1026,10 @@ class Aligned(Padded):
         after = stream.tell()
         padlen = -(after - before) % self.length
         padding = stream.read(padlen)
-        if padding != self.padchar * padlen:
+        if padding != b'\x00' * padlen:
             raise ParsingError(
                 'must read padding of {!r}, got {!r}'.format(
-                    self.padchar * padlen, padding,
+                    b'\x00' * padlen, padding,
                 )
             )
         return obj
@@ -1061,82 +1039,18 @@ class Aligned(Padded):
         return size + (-size % self.length)
 
     def _repr(self):
-        return 'Aligned({}, length={}, padchar={!r}, direction={!r})'.format(
-            self.construct, self.length, self.padchar, self.direction
-        )
+        return 'Aligned({}, length={})'.format(self.construct, self.length)
 
 
 # Strings
-class StringEncoded(Adapted):
-    """
-    Helper adapter for strings, to encode before building and decode
-    after parsing with the specified encoding.
-
-        >>> e = StringEncoded(Bytes(3), 'utf-8')
-        >>> e
-        StringEncoded(Bytes(3), encoding='utf-8')
-        >>> e.build('foo')
-        b'foo'
-        >>> e.parse(b'bar')
-        'bar'
-        >>> e.sizeof()
-        3
-
-    If no encoding specified, no encoding/decoding happens.
-
-        >>> e = StringEncoded(Bytes(3))
-        >>> e
-        StringEncoded(Bytes(3))
-        >>> e.build(b'foo')
-        b'foo'
-        >>> e.parse(b'bar')
-        b'bar'
-        >>> # Python3.4 and pypy3 error with
-        >>> # 'str' does not support the buffer interface
-        >>> # Python3.5+ errors with
-        >>> # a bytes-like object is required, not 'str'
-        >>> e.build('baz')
-        Traceback (most recent call last):
-        ...
-        structures.BuildingError: ...
-
-    :param construct: Construct to adapt with encoding/decoding.
-
-    :param encoding: Encode/decode using this encoding. Default is None,
-    meaning no encoding/decoding happens.
-
-    """
-
-    __slots__ = ('encoding',)
-
-    def __init__(self, construct: Construct, encoding=None):
-        encode = decode = None
-        if encoding is not None:
-            def encode(obj):
-                return obj.encode(encoding)
-
-            def decode(obj):
-                return obj.decode(encoding)
-
-        super().__init__(construct, before_build=encode, after_parse=decode)
-        self.encoding = encoding
-
-    def _repr(self):
-        if self.encoding is None:
-            return 'StringEncoded({})'.format(self.construct)
-        return 'StringEncoded({}, encoding={!r})'.format(
-            self.construct, self.encoding
-        )
-
-
-class String(Subconstruct):
+class String(Construct):
     r"""
     String constrained only by the specified constant length.
-    Null bytes are padded/trimmed from the left or right side.
+    Null bytes are padded/trimmed from the right side.
 
         >>> s = String(8, encoding='utf-8')
         >>> s
-        String(8, encoding='utf-8', padchar=b'\x00', direction='right')
+        String(length=8, encoding='utf-8')
         >>> s.build('foo')
         b'foo\x00\x00\x00\x00\x00'
         >>> s.parse(b'foo\x00\x00\x00\x00\x00')
@@ -1149,7 +1063,7 @@ class String(Subconstruct):
         >>> s.build('foobarbazxxxyyy')
         Traceback (most recent call last):
         ...
-        structures.BuildingError: length of the object to build must be in range [1, 9), got 15
+        structures.BuildingError: length of the string to build must be in range [1, 9), got 15
 
     But you can slice the data in advance:
 
@@ -1166,44 +1080,56 @@ class String(Subconstruct):
         >>> s.parse(b'foo\x00\x00\x00\x00\x00')
         b'foo'
 
-    ``padchar`` and ``direction`` examples can be found in ``Padded`` docstring.
-
     :param length: Number of bytes taken by the string. Not that the actual
     string can be less than this number. In that case the string will be
-    padded according to ``padchar`` and ``paddir``.
+    padded with zero bytes.
 
-    :param encoding: See ``StringEncoded``.
-
-    :param padchar: See ``Padded``.
-
-    :param direction: See ``Padded``.
+    :param encoding: Encode/decode using this encoding. By default no
+    encoding/decoding happens (encoding is None).
 
     """
-    __slots__ = ('length',)
+    __slots__ = ('length', 'encoding')
 
-    def __init__(self, length: int, encoding: str = None, padchar=b'\x00',
-                 direction='right'):
-        variable_bytes = Adapted(
-            Bytes(1)[1:length + 1], after_parse=b''.join,
-        )
-        construct = Padded(variable_bytes, length, padchar, direction)
-        super().__init__(StringEncoded(construct, encoding))
+    def __init__(self, length: int, encoding: str = None):
+        super().__init__()
+        if length < 0:
+            raise ValueError('length must be >= 0, got {}'.format(length))
         self.length = length
+        self.encoding = encoding
+
+    def _build_stream(self, obj, stream, context):
+        if self.encoding is not None:
+            obj = obj.encode(self.encoding)
+        if not 1 <= len(obj) <= self.length:
+            raise BuildingError(
+                'length of the string to build must be in range '
+                '[1, {}), got {}'.format(self.length + 1, len(obj))
+            )
+        helper = Padded(Bytes(len(obj)), self.length)
+        return helper._build_stream(obj, stream, context)
+
+    def _parse_stream(self, stream, context):
+        data = stream.read(self.length)
+        if len(data) != self.length:
+            raise ParsingError('could not read enough bytes, expected '
+                               '{}, found {}'.format(self.length, len(data)))
+        obj = data.rstrip(b'\x00')
+        if self.encoding is not None:
+            obj = obj.decode(self.encoding)
+        return obj
+
+    def _sizeof(self, context):
+        return self.length
 
     def _repr(self):
-        encoded = self.construct  # type: StringEncoded
-        padded = self.construct.construct  # type: Padded
-        fields = [str(self.length)]
-        if encoded.encoding is not None:
-            fields.append('encoding={!r}'.format(encoded.encoding))
-        fields += [
-            'padchar={!r}'.format(padded.padchar),
-            'direction={!r}'.format(padded.direction),
-        ]
-        return 'String({})'.format(', '.join(fields))
+        if self.encoding is not None:
+            return 'String(length={}, encoding={!r})'.format(
+                self.length, self.encoding
+            )
+        return 'String(length={})'.format(self.length)
 
 
-class PascalString(Subconstruct):
+class PascalString(Construct):
     r"""
     Length-prefixed string.
 
@@ -1232,31 +1158,41 @@ class PascalString(Subconstruct):
 
     :param length_field: Construct used to build/parse the length.
 
-    :param encoding: See ``StringEncoded``.
+    :param encoding: Encode/decode using this encoding. By default no
+    encoding/decoding happens (encoding is None).
 
     """
-    __slots__ = ()
+    __slots__ = ('construct', 'length_field', 'encoding')
 
     def __init__(self, length_field: Construct, encoding: str = None):
-        super().__init__(StringEncoded(
-            Prefixed(Bytes(), length_field),
-            encoding,
-        ))
+        super().__init__()
+        self.length_field = length_field
+        self.construct = Prefixed(Bytes(), length_field)
+        self.encoding = encoding
+
+    def _build_stream(self, obj, stream, context):
+        if self.encoding is not None:
+            obj = obj.encode(self.encoding)
+        return self.construct._build_stream(obj, stream, context)
+
+    def _parse_stream(self, stream, context):
+        obj = self.construct._parse_stream(stream, context)
+        if self.encoding is not None:
+            obj = obj.decode(self.encoding)
+        return obj
 
     def _sizeof(self, context):
         raise SizeofError('PascalString has no fixed size')
 
     def _repr(self):
-        encoding = self.construct.encoding
-        length_field = self.construct.construct.length_field
-        if encoding is None:
-            return 'PascalString(length_field={})'.format(length_field)
+        if self.encoding is None:
+            return 'PascalString(length_field={})'.format(self.length_field)
         return 'PascalString(length_field={}, encoding={!r})'.format(
-            length_field, encoding,
+            self.length_field, self.encoding,
         )
 
 
-class CString(Subconstruct):
+class CString(Construct):
     r"""
     String ending in a zero byte.
 
@@ -1293,32 +1229,47 @@ class CString(Subconstruct):
         ...
         structures.ParsingError: 'utf...' codec can't decode byte 0x66 in position 0: truncated data
 
-    :param encoding: See ``StringEncoded``.
+    :param encoding: Encode/decode using this encoding. By default no
+    encoding/decoding happens (encoding is None).
 
     """
-    __slots__ = ()
+    __slots__ = ('encoding',)
 
     def __init__(self, encoding: str = None):
-        construct = Adapted(
-            Repeat(
-                Bytes(1), start=0, stop=sys.maxsize,
-                until=lambda items: items[-1] == b'\x00',
-            ),
-            before_build=lambda obj: obj + b'\x00',
-            after_parse=lambda obj: b''.join(obj[:-1]),
-        )
-        super().__init__(StringEncoded(construct, encoding))
+        super().__init__()
+        self.encoding = encoding
+
+    def _build_stream(self, obj, stream, context):
+        if self.encoding is not None:
+            obj = obj.encode(self.encoding)
+        stream.write(obj + b'\x00')
+
+    def _parse_stream(self, stream, context):
+        obj = bytearray()
+        while True:
+            byte = stream.read(1)
+            if byte == b'\x00':
+                break
+            if not byte:
+                raise ParsingError(
+                    'could not read enough bytes, the stream has ended'
+                )
+            obj += byte
+        obj = bytes(obj)
+        if self.encoding is not None:
+            obj = obj.decode(self.encoding)
+        return obj
 
     def _sizeof(self, context):
         raise SizeofError('CString has no fixed size')
 
     def _repr(self):
-        if self.construct.encoding is not None:
-            return 'CString(encoding={!r})'.format(self.construct.encoding)
+        if self.encoding is not None:
+            return 'CString(encoding={!r})'.format(self.encoding)
         return 'CString()'
 
 
-class Line(Subconstruct):
+class Line(Construct):
     r"""
     String ending in CRLF (b'\r\n'). Useful for building and parsing
     text-based network protocols.
@@ -1335,12 +1286,13 @@ class Line(Subconstruct):
         ...
         structures.SizeofError: Line has no fixed size
 
-    Default encoding is latin-1, but encoding/decoding can be disabled. In
-    that case it's up to the application to decide how to process these bytes.
+    Default encoding is latin-1, but encoding/decoding can be changed or
+    disabled. In that case it's up to the application to decide how to process
+    raw bytes.
 
-        >>> l = Line(raw=True)
+        >>> l = Line(encoding=None)
         >>> l
-        Line(raw=True)
+        Line(encoding=None)
         >>> l.build(b'foo')
         b'foo\r\n'
         >>> l.parse(_)
@@ -1348,31 +1300,42 @@ class Line(Subconstruct):
         >>> l.parse(b'bar\r\nbaz\r\n')
         b'bar'
 
-    :param raw: If True, no latin-1 encoding/decoding happens.
+    :param encoding: Encode/decode using this encoding. Default is 'latin-1'.
 
     """
-    __slots__ = ('raw',)
+    __slots__ = ('encoding',)
 
-    def __init__(self, raw=False):
-        construct = Adapted(
-            Repeat(
-                Bytes(1), start=0, stop=sys.maxsize,
-                until=lambda items: items[-2:] == [b'\r', b'\n'],
-            ),
-            before_build=lambda obj: obj + b'\r\n',
-            after_parse=lambda obj: b''.join(obj[:-2]),
-        )
-        if not raw:
-            construct = StringEncoded(construct, 'latin-1')
-        super().__init__(construct)
-        self.raw = raw
+    def __init__(self, encoding='latin-1'):
+        super().__init__()
+        self.encoding = encoding
+
+    def _build_stream(self, obj, stream, context):
+        if self.encoding is not None:
+            obj = obj.encode(self.encoding)
+        stream.write(obj + b'\r\n')
+
+    def _parse_stream(self, stream, context):
+        obj = bytearray()
+        while True:
+            byte = stream.read(1)
+            if obj[-2:] == b'\r\n':
+                break
+            if not byte:
+                raise ParsingError(
+                    'could not read enough bytes, the stream has ended'
+                )
+            obj += byte
+        obj = bytes(obj[:-2])
+        if self.encoding is not None:
+            obj = obj.decode(self.encoding)
+        return obj
 
     def _sizeof(self, context):
         raise SizeofError('Line has no fixed size')
 
     def _repr(self):
-        if self.raw:
-            return 'Line(raw=True)'
+        if self.encoding != 'latin-1':
+            return 'Line(encoding={!r})'.format(self.encoding)
         return 'Line()'
 
 
