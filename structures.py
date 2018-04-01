@@ -591,7 +591,7 @@ class Padding(Construct):
 
 
 # Adapters.
-class Repeat(Subconstruct):
+class Repeat(Construct):
     r"""
     Repeat a construct for the specified range of times (semantics follows
     built-in ``range`` function except the step is always 1
@@ -682,11 +682,12 @@ class Repeat(Subconstruct):
     predicate function is called during building/parsing.
 
     """
-    __slots__ = ('start', 'stop', 'until')
+    __slots__ = ('construct', 'start', 'stop', 'until')
 
     def __init__(self, construct: Construct, start: int, stop: int,
                  until: callable = None):
-        super().__init__(construct)
+        super().__init__()
+        self.construct = construct
         if start < 0:
             raise ValueError('start must be >= 0, got {}'.format(start))
         self.start = start
@@ -1318,13 +1319,13 @@ class Line(Construct):
         obj = bytearray()
         while True:
             byte = stream.read(1)
-            if obj[-2:] == b'\r\n':
-                break
             if not byte:
                 raise ParsingError(
                     'could not read enough bytes, the stream has ended'
                 )
             obj += byte
+            if obj[-2:] == b'\r\n':
+                break
         obj = bytes(obj[:-2])
         if self.encoding is not None:
             obj = obj.decode(self.encoding)
