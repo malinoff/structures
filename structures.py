@@ -8,7 +8,7 @@ from collections import ChainMap, OrderedDict, Sequence
 
 __version__ = '0.9.5'
 
-__all__ = ['Construct', 'Context', 'Error',
+__all__ = ['Construct', 'Subconstruct', 'Context', 'Error',
            'BuildingError', 'ParsingError', 'SizeofError', 'ContextualError',
            'Pass', 'Flag', 'Bytes', 'Integer', 'Float', 'Padding',
            'Repeat', 'RepeatExactly', 'Adapted', 'Prefixed', 'Padded',
@@ -143,6 +143,39 @@ class Construct:
 
     def _sizeof(self, context):  # pragma: nocover
         raise NotImplementedError
+
+    def _repr(self):  # pragma: nocover
+        raise NotImplementedError
+
+
+class Subconstruct(Construct):
+    """
+    Non-trivial constructs often wrap other constructs and add
+    transformations on top of them. This class helps to reduce boilerplate
+    by providing default implementations for build, parse and sizeof:
+    it proxies calls to the provided construct.
+
+    Note that _repr still has to be implemented.
+
+    :param construct: Wrapped construct.
+
+    """
+    __slots__ = ('construct',)
+
+    def __init__(self, construct: Construct):
+        super().__init__()
+        self.construct = construct
+        if construct._embedded:
+            self._embedded = True
+
+    def _build_stream(self, obj, stream, context):
+        return self.construct._build_stream(obj, stream, context)
+
+    def _parse_stream(self, stream, context):
+        return self.construct._parse_stream(stream, context)
+
+    def _sizeof(self, context):
+        return self.construct._sizeof(context)
 
     def _repr(self):  # pragma: nocover
         raise NotImplementedError
@@ -764,7 +797,7 @@ class RepeatExactly(Repeat):
         return 'RepeatExactly({}, {})'.format(self.construct, self.start)
 
 
-class Adapted(Construct):
+class Adapted(Subconstruct):
     r"""
     Adapter helps to transform objects before building and/or after parsing
     of the provided construct.
@@ -793,12 +826,11 @@ class Adapted(Construct):
     Default is None, meaning no parsing adaption is performed.
 
     """
-    __slots__ = ('construct', 'before_build', 'after_parse')
+    __slots__ = ('before_build', 'after_parse')
 
     def __init__(self, construct: Construct,
                  before_build: callable = None, after_parse: callable = None):
-        super().__init__()
-        self.construct = construct
+        super().__init__(construct)
         self.before_build = before_build
         self.after_parse = after_parse
 
@@ -813,16 +845,13 @@ class Adapted(Construct):
             obj = self.after_parse(obj)
         return obj
 
-    def _sizeof(self, context):
-        return self.construct._sizeof(context)
-
     def _repr(self):
         return 'Adapted({}, before_build={!r}, after_parse={!r})'.format(
             self.construct, self.before_build, self.after_parse,
         )
 
 
-class Prefixed(Construct):
+class Prefixed(Subconstruct):
     r"""
     Length-prefixed construct.
     Parses the length field first, then reads that amount of bytes
@@ -852,11 +881,10 @@ class Prefixed(Construct):
     :param length_field: Construct used to build/parse the length.
 
     """
-    __slots__ = ('construct', 'length_field')
+    __slots__ = ('length_field',)
 
     def __init__(self, construct: Construct, length_field: Construct):
-        super().__init__()
-        self.construct = construct
+        super().__init__(construct)
         self.length_field = length_field
 
     def _build_stream(self, obj, stream, context):
@@ -1731,7 +1759,7 @@ class BitFields(Construct):
 
 
 # Conditionals
-class Const(Construct):
+class Const(Subconstruct):
     r"""
     Build and parse constant values using the given construct.
     ``None`` can be specified for building.
@@ -1770,15 +1798,14 @@ class Const(Construct):
     :param value: Constant value to be built and parsed.
 
     """
-    __slots__ = ('construct', 'value')
+    __slots__ = ('value',)
 
     def __init__(self, construct, value=None):
-        super().__init__()
         if value is None:
             if isinstance(construct, bytes):
                 # Handle the simplest Const(b'foobar') case
                 construct, value = Bytes(len(construct)), construct
-        self.construct = construct
+        super().__init__(construct)
         self.value = value
 
     def _build_stream(self, obj, stream, context):
@@ -1793,9 +1820,6 @@ class Const(Construct):
             raise ParsingError('parsed value must be '
                                '{!r}, got {!r}'.format(self.value, obj))
         return obj
-
-    def _sizeof(self, context):
-        return self.construct._sizeof(context)
 
     def _repr(self):
         return 'Const({}, value={!r})'.format(
@@ -2004,7 +2028,7 @@ class Switch(Construct):
         )
 
 
-class Enum(Construct):
+class Enum(Subconstruct):
     r"""
     Like a built-in ``Enum`` class, maps string names to values.
 
@@ -2059,11 +2083,10 @@ class Enum(Construct):
     Default is Raise().
 
     """
-    __slots__ = ('construct', 'cases', 'build_cases', 'parse_cases', 'default')
+    __slots__ = ('cases', 'build_cases', 'parse_cases', 'default')
 
     def __init__(self, construct, cases, default=None):
-        super().__init__()
-        self.construct = construct
+        super().__init__(construct)
         # For building we need k -> v and v -> v mapping
         self.cases = cases.copy()
         self.build_cases = cases.copy()
@@ -2102,9 +2125,6 @@ class Enum(Construct):
             return self.default._parse_stream(stream, context)
         return obj
 
-    def _sizeof(self, context):
-        return self.construct._sizeof(context)
-
     def _repr(self):
         if isinstance(self.default, Raise):
             return 'Enum({}, cases={})'.format(
@@ -2116,7 +2136,7 @@ class Enum(Construct):
 
 
 # Stream manipulation and inspection
-class Offset(Construct):
+class Offset(Subconstruct):
     r"""
     Changes the stream to a given offset where building or parsing
     should take place, and restores the stream position when finished.
@@ -2152,11 +2172,10 @@ class Offset(Construct):
     :param offset: Offset to seek the stream to (from the current position).
 
     """
-    __slots__ = ('construct', 'offset')
+    __slots__ = ('offset',)
 
     def __init__(self, construct, offset):
-        super().__init__()
-        self.construct = construct
+        super().__init__(construct)
         if offset < 0:
             raise ValueError('offset must be >= 0, got {}'.format(offset))
         self.offset = offset
@@ -2174,9 +2193,6 @@ class Offset(Construct):
         obj = self.construct._parse_stream(stream, context)
         stream.seek(fallback)
         return obj
-
-    def _sizeof(self, context):
-        return self.construct._sizeof(context)
 
     def _repr(self):
         return 'Offset({}, offset={})'.format(
@@ -2233,7 +2249,7 @@ class Tell(Construct):
         return 'Tell()'
 
 
-class Checksum(Construct):
+class Checksum(Subconstruct):
     r"""
     Build and parse a checksum of data using a given ``hashlib``-compatible
     hash function.
@@ -2248,11 +2264,10 @@ class Checksum(Construct):
         32
 
     """
-    __slots__ = ('construct', 'hash_func', 'data_func')
+    __slots__ = ('hash_func', 'data_func')
 
     def __init__(self, construct, hash_func, data_func):
-        super().__init__()
-        self.construct = construct
+        super().__init__(construct)
         self.hash_func = hash_func
         self.data_func = data_func
 
@@ -2282,9 +2297,6 @@ class Checksum(Construct):
             )
         return parsed_hash
 
-    def _sizeof(self, context):
-        return self.construct._sizeof(context)
-
     def _repr(self):
         return 'Checksum({}, hash_func={}, data_func={!r})'.format(
             self.construct, self.hash_func, self.data_func,
@@ -2292,34 +2304,33 @@ class Checksum(Construct):
 
 
 # Debugging utilities
-class Debug(Construct):
+class Debug(Subconstruct):
     r"""
     In case of an error, launch a pdb-compatible debugger.
 
     """
-    __slots__ = ('construct', 'debugger', 'on_exc')
+    __slots__ = ('debugger', 'on_exc')
 
     def __init__(self, construct, debugger=pdb, on_exc=Exception):
-        super().__init__()
-        self.construct = construct
+        super().__init__(construct)
         self.debugger = debugger
         self.on_exc = on_exc
 
     def _build_stream(self, obj, stream, context):
         try:
-            self.construct._build_stream(obj, stream, context)
+            super()._build_stream(obj, stream, context)
         except self.on_exc:
             pdb.post_mortem(sys.exc_info()[2])
 
     def _parse_stream(self, stream, context):
         try:
-            self.construct._parse_stream(stream, context)
+            super()._parse_stream(stream, context)
         except self.on_exc:
             pdb.post_mortem(sys.exc_info()[2])
 
     def _sizeof(self, context):
         try:
-            self.construct._sizeof(context)
+            super()._sizeof(context)
         except self.on_exc:
             pdb.post_mortem(sys.exc_info()[2])
 
