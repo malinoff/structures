@@ -303,7 +303,7 @@ class Bytes(Construct):
         >>> b.build(b'foobar')
         Traceback (most recent call last):
         ...
-        structures.BuildingError: must build 3 bytes, got 6
+        structures.core.BuildingError: must build 3 bytes, got 6
         >>> b.sizeof()
         3
 
@@ -325,7 +325,7 @@ class Bytes(Construct):
         >>> b.sizeof()
         Traceback (most recent call last):
         ...
-        structures.SizeofError: Bytes() has no fixed size
+        structures.core.SizeofError: Bytes() has no fixed size
 
     :param length: a number of bytes to build and to parse, if -1 then parsing
     consumes the stream to its end (see examples).
@@ -400,7 +400,7 @@ class Integer(Construct):
         >>> Integer(1).build(-1)
         Traceback (most recent call last):
         ...
-        structures.BuildingError: ...
+        structures.core.BuildingError: ...
 
         >>> Integer(3)
         Traceback (most recent call last):
@@ -607,7 +607,7 @@ class Repeat(Construct):
         >>> r.sizeof()
         Traceback (most recent call last):
         ...
-        structures.SizeofError: cannot determine size of variable sized Repeat
+        structures.core.SizeofError: cannot determine size of variable sized Repeat
 
     A predicate function can be specified to conditionally stop repeating.
     This function should accept a single argument of all accumulated
@@ -630,15 +630,15 @@ class Repeat(Construct):
         >>> r.build([True])
         Traceback (most recent call last):
         ...
-        structures.BuildingError: length of the object to build must be in range [3, 5), got 1
+        structures.core.BuildingError: length of the object to build must be in range [3, 5), got 1
         >>> r.parse(b'\x01\x01')
         Traceback (most recent call last):
         ...
-        structures.ParsingError: required to parse at least 3 of Flag(), parsed 2 instead; error was: could not read enough bytes, expected 1, found 0
+        structures.core.ParsingError: required to parse at least 3 of Flag(), parsed 2 instead; error was: could not read enough bytes, expected 1, found 0
         >>> r.parse(b'\x00')
         Traceback (most recent call last):
         ...
-        structures.ParsingError: required to parse at least 3 of Flag(), parsed 1 instead; exited due to 'until' predicate
+        structures.core.ParsingError: required to parse at least 3 of Flag(), parsed 1 instead; exited due to 'until' predicate
 
     An alternative slice-based syntax can be used:
 
@@ -870,11 +870,11 @@ class Prefixed(Subconstruct):
         >>> p.sizeof()
         Traceback (most recent call last):
         ...
-        structures.SizeofError: Bytes() has no fixed size
+        structures.core.SizeofError: Bytes() has no fixed size
         >>> p.parse(b'\x06baz')
         Traceback (most recent call last):
         ...
-        structures.ParsingError: could not read enough bytes, expected 6, found 3
+        structures.core.ParsingError: could not read enough bytes, expected 6, found 3
 
     :param construct: Construct to be prefixed with its length.
 
@@ -929,7 +929,7 @@ class Padded(Construct):
         >>> p.parse(b'baz')
         Traceback (most recent call last):
         ...
-        structures.ParsingError: could not read enough bytes, expected 6, found 3
+        structures.core.ParsingError: could not read enough bytes, expected 6, found 3
 
     Providing invalid parameters results in a ValueError:
 
@@ -993,7 +993,7 @@ class Aligned(Construct):
         >>> a.sizeof()
         Traceback (most recent call last):
         ...
-        structures.SizeofError: cannot determine size of variable sized Repeat
+        structures.core.SizeofError: cannot determine size of variable sized Repeat
 
         >>> a = Aligned(Bytes(6), 4)
         >>> a.sizeof()
@@ -1001,7 +1001,7 @@ class Aligned(Construct):
         >>> a.parse(b'foobar\x00\x01')
         Traceback (most recent call last):
         ...
-        structures.ParsingError: must read padding of b'\x00\x00', got b'\x00\x01'
+        structures.core.ParsingError: must read padding of b'\x00\x00', got b'\x00\x01'
 
     """
     __slots__ = ('construct', 'length')
@@ -1064,7 +1064,7 @@ class String(Construct):
         >>> s.build('foobarbazxxxyyy')
         Traceback (most recent call last):
         ...
-        structures.BuildingError: length of the string to build must be in range [1, 9), got 15
+        structures.core.BuildingError: length of the string to build must be in range [1, 9), got 15
 
     But you can slice the data in advance:
 
@@ -1144,7 +1144,7 @@ class PascalString(Construct):
         >>> p.sizeof()
         Traceback (most recent call last):
         ...
-        structures.SizeofError: PascalString has no fixed size
+        structures.core.SizeofError: PascalString has no fixed size
 
     Encoding can be omitted, in that case ``PascalString`` builds and
     parses from bytes, not strings:
@@ -1207,7 +1207,7 @@ class CString(Construct):
         >>> s.sizeof()
         Traceback (most recent call last):
         ...
-        structures.SizeofError: CString has no fixed size
+        structures.core.SizeofError: CString has no fixed size
 
     You can omit encoding to build/parse raw bytes:
 
@@ -1228,7 +1228,7 @@ class CString(Construct):
         >>> s.parse(_)
         Traceback (most recent call last):
         ...
-        structures.ParsingError: 'utf...' codec can't decode byte 0x66 in position 0: truncated data
+        structures.core.ParsingError: 'utf...' codec can't decode byte 0x66 in position 0: truncated data
 
     :param encoding: Encode/decode using this encoding. By default no
     encoding/decoding happens (encoding is None).
@@ -1285,7 +1285,7 @@ class Line(Construct):
         >>> l.sizeof()
         Traceback (most recent call last):
         ...
-        structures.SizeofError: Line has no fixed size
+        structures.core.SizeofError: Line has no fixed size
 
     Default encoding is latin-1, but encoding/decoding can be changed or
     disabled. In that case it's up to the application to decide how to process
@@ -1521,17 +1521,17 @@ class Contextual(Construct):
         >>> c.build(1)
         Traceback (most recent call last):
         ...
-        structures.ContextualError: 'length'
+        structures.core.ContextualError: 'length'
         >>> c.parse(b'\x00')
         Traceback (most recent call last):
         ...
-        structures.ContextualError: 'length'
+        structures.core.ContextualError: 'length'
         >>> c.sizeof(context={'length': 4})
         4
         >>> c.sizeof()
         Traceback (most recent call last):
         ...
-        structures.ContextualError: 'length'
+        structures.core.ContextualError: 'length'
 
     :param to_construct: Construct subclass to be instantiated during
     building/parsing.
@@ -1677,7 +1677,7 @@ class BitFields(Construct):
         >>> b.build({'flag': 10})
         Traceback (most recent call last):
         ...
-        structures.BuildingError: cannot pack 10 into 1 bit
+        structures.core.BuildingError: cannot pack 10 into 1 bit
 
     Of course, fields bit length must be >=0:
 
@@ -1774,13 +1774,13 @@ class Const(Subconstruct):
         >>> c.build(False)
         Traceback (most recent call last):
         ...
-        structures.BuildingError: provided value must be None or True, got False
+        structures.core.BuildingError: provided value must be None or True, got False
         >>> c.parse(b'\x01')
         True
         >>> c.parse(b'\x00')
         Traceback (most recent call last):
         ...
-        structures.ParsingError: parsed value must be True, got False
+        structures.core.ParsingError: parsed value must be True, got False
 
     Since the majority of constant fields are ASCII signatures, ``Const``
     supports the following short-hand:
@@ -1840,15 +1840,15 @@ class Raise(Construct):
         >>> r.build(None)
         Traceback (most recent call last):
         ...
-        structures.BuildingError: a condition is false
+        structures.core.BuildingError: a condition is false
         >>> r.parse(b'anything')
         Traceback (most recent call last):
         ...
-        structures.ParsingError: a condition is false
+        structures.core.ParsingError: a condition is false
         >>> r.sizeof()
         Traceback (most recent call last):
         ...
-        structures.SizeofError: a condition is false
+        structures.core.SizeofError: a condition is false
 
     :param message: Message to be shown when raising the errors. Use
     ``Contextual`` construct to specify dynamic messages.
@@ -1972,11 +1972,11 @@ class Switch(Construct):
         >>> s.build(b'baz', context={'foo': 3})
         Traceback (most recent call last):
         ...
-        structures.BuildingError: no default case specified
+        structures.core.BuildingError: no default case specified
         >>> s.parse(b'baz', context={'foo': 3})
         Traceback (most recent call last):
         ...
-        structures.ParsingError: no default case specified
+        structures.core.ParsingError: no default case specified
 
     You can choose how to process missing cases error by providing default case:
 
@@ -2049,11 +2049,11 @@ class Enum(Subconstruct):
         >>> e.build('z')
         Traceback (most recent call last):
         ...
-        structures.BuildingError: no default case specified
+        structures.core.BuildingError: no default case specified
         >>> e.parse(b'zzz')
         Traceback (most recent call last):
         ...
-        structures.ParsingError: no default case specified
+        structures.core.ParsingError: no default case specified
 
     You can choose how to process missing cases error by providing default case:
 
