@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "structures"
+version = "0.11.0"
+description = "Declarative binary building and parsing: simple, fast and extensible"
+authors = ["Dmitry Malinovsky (aka malinoff) <damalinov@gmail.com>"]
+readme = "README.rst"
+license = "apache-2.0"
+
+keywords = [
+  "structures",
+  "declarative",
+  "data structure",
+  "binary",
+  "parser",
+  "builder",
+  "pack",
+  "unpack",
+]
+
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Education",
+  "Intended Audience :: Information Technology",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: System Administrators",
+  "Intended Audience :: Telecommunications Industry",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3 :: Only",
+]
+
+[tool.poetry.dependencies]
+python = ">=3.4"
+
+[tool.poetry.dev-dependencies]
+pytest = "^3.7"
+pytest-cov = "^2.5"
+flake8 = "^3.5"
+readme-renderer = "^21.0"
