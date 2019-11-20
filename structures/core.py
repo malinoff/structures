@@ -1666,7 +1666,6 @@ class BitFieldStruct(Construct, metaclass=BitFieldStructMeta):
 
     def _parse_stream(self, stream, context):
         data = stream.read(self._length)
-        print('ezt olvastam', data, len(data), self._length)
         if len(data) < self._length:
             raise ParsingError('Insufficient data length for parsing BitFieldStruct! '
                                'Expected {} got {}.'.format(self._length, len(data)))
