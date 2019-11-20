@@ -15,7 +15,7 @@ __all__ = ['Construct', 'Subconstruct', 'Context', 'Error',
            'Aligned', 'String', 'PascalString', 'CString',
            'Line', 'Struct', 'Contextual', 'Computed', 'BitFields', 'Const',
            'Raise', 'If', 'Switch', 'Enum', 'Offset', 'Tell', 'Checksum',
-           'Debug']
+           'Debug', 'Bit', 'BitPadding', 'BitFieldStruct']
 
 CLASS_NAMESPACE_ORDERED = sys.version_info >= (3, 6)
 
@@ -287,6 +287,40 @@ class Flag(Construct):
 
     def _repr(self):
         return 'Flag()'
+
+
+class Bit(Construct):
+
+    """
+    Bit class, to be used in the context of a BitFieldStruct.
+    """
+
+    __slots__ = Construct.__slots__ + ('bit_size',)
+
+    def __init__(self, bit_size: int):
+        super().__init__()
+        self.bit_size = bit_size
+
+    def _build_stream(self, obj, stream, context):
+        pass
+
+    def _parse_stream(self, stream, context):
+        pass
+
+    def _sizeof(self, context):
+        return self.bit_size
+
+    def _repr(self):
+        return 'Bit()'
+
+
+class BitPadding(Bit):
+    """
+    BitPadding class, to be used in the context of a BitFieldStruct.
+    """
+
+    def _repr(self):
+        return 'BitPadding()'
 
 
 class Bytes(Construct):
@@ -1365,6 +1399,30 @@ class StructMeta(type):
         return type.__new__(mcs, name, bases, namespace)
 
 
+class BitFieldStructMeta(type):
+    """
+    Metaclass for BitFieldStruct, a mandatory machinery to maintain an ordered
+    class namespace and __slots__.
+    """
+
+    if not CLASS_NAMESPACE_ORDERED:  # pragma: nocover
+        @classmethod
+        def __prepare__(mcs, name, bases):
+            return OrderedDict()
+
+    def __new__(mcs, name, bases, namespace):
+        fields = OrderedDict([
+            (key, value) for key, value in namespace.items()
+            if isinstance(value, (Bit, BitPadding))
+        ])
+        namespace['__bit_fields__'] = fields
+        slots = namespace.get('__slots__')
+        if slots is None:
+            # Make sure user defined structs aren't eating memory.
+            namespace['__slots__'] = Construct.__slots__
+        return type.__new__(mcs, name, bases, namespace)
+
+
 class Struct(Construct, metaclass=StructMeta):
     r"""
     Sequence of named constructs, similar to structs in C.
@@ -1503,6 +1561,144 @@ class Struct(Construct, metaclass=StructMeta):
     def _repr(self):
         return '{}({})'.format(
             self.__class__.__name__, 'embedded=True' if self._embedded else '',
+        )
+
+
+class BitFieldStruct(Construct, metaclass=BitFieldStructMeta):
+
+    r"""
+    Build and parse named bit-wise fields that can be given as in C.
+    The bitfields must be given from LSB to MSB order (top to bottom).
+    The bitfields can span over byte boundaries, and the missing bits will be
+    handled as don't care paddings.
+
+        >>> class MyBitfields(BitFieldStruct):
+        >>>     foo = Bit(1)        # LSB 1 bit
+        >>>     _ = BitPadding(3)   # 3 don't care padding bits
+        >>>     bar = Bit(3)        # 3 bits
+        >>>     overflow = Bit(4)   # 1 MSB bit and 3 others over byte boundary
+        >>> b = MyBitFields()
+        >>> print(b)
+        MyBitfields(foo[0:0], _PAD_[1:3], bar[4:6], overflow[7:10])
+        >>> b.build({'foo': 1, 'bar': 0b101, 'overflow': 0b1111})
+        b'\xd1\x07'
+        >>> b.parse(b'\xF0\xFF') == {'foo': 0, 'bar': 7, 'overflow': 15}
+        True
+        >>> b.sizeof()
+        1
+
+    If a field is not given when parsing, it will be handled as 0:
+
+        >>> builded_full = b.build({'foo': 0, 'bar': 0b101, 'overflow': 0b1111})
+        >>> # leave out foo, it shall be handled as 0.
+        >>> builded_partial = b.build({'bar': 0b101, 'overflow': 0b1111})
+        >>> print(builded_full == builded_partial)
+        True
+
+    If not enough data is fed to the parsing, a ParsingError will be raised:
+
+        >>> b.parse(b'\xff')
+        Traceback (most recent call last):
+        ...
+        structures.core.ParsingError: Insufficient data length for parsing BitFieldStruct! Expected 2 got 1.
+
+    If you try to build from integer that can't be packed into the specified
+    amount of bits, a BuildingError will be raised:
+
+        >>> b.build({'foo': 3})
+        Traceback (most recent call last):
+        ...
+        structures.core.BuildingError: cannot pack 10 into 1 bit
+
+    You can also embed BitFields into a struct:
+
+        >>> class MyContainerStruct(Struct):
+        >>>     something = Integer(2, 'little')
+        >>>     bitfields = MyBitfields(embedded=True)
+        >>> x = MyContainerStruct()
+        >>> x.sizeof() == 4
+        True
+
+    :param embedded: If True, this construct will be embedded into the
+    enclosed struct.
+
+    """
+
+    __slots__ = Construct.__slots__ + ('_bit_size', '_actual_bit_size', '_length')
+
+    def __init__(self, *, embedded=False):
+        super().__init__()
+        self._embedded = embedded
+        _bit_size = 0
+        for name, bit in self.fields.items():
+            if not isinstance(bit, (Bit, BitPadding)):
+                raise TypeError('Only Bit or BitPadding can be in BitFieldStruct!')
+            _bit_size += bit.sizeof()
+        # fill bits up to the next byte boundary
+        _fill_bits = ceil(_bit_size / 8) * 8 - _bit_size
+        self._actual_bit_size = _bit_size
+        self._bit_size = _bit_size + _fill_bits
+        self._length = self._bit_size // 8
+
+    @property
+    def fields(self):
+        return self.__bit_fields__  # noqa
+
+    def _bitmask(self, bitlen):
+        return (2 << (bitlen-1)) - 1
+
+    def _build_stream(self, obj, stream, context):
+        bitpos = 0
+        intdata = 0
+        for name, bit in self.fields.items():
+            mask = self._bitmask(bit.bit_size)
+            bit_value = obj.get(name, 0)
+            if isinstance(bit, BitPadding):
+                pass
+            elif isinstance(bit, Bit):
+                if bit_value > mask:
+                    raise BuildingError('Cannot pack {} into {} bits!'.format(bit_value, bit.bit_size))
+                intdata += (bit_value & self._bitmask(bit.bit_size)) << bitpos
+            else:
+                raise TypeError('Only Bit or BitPadding can be in BitFieldStruct!')
+            bitpos += bit.bit_size
+        stream.write(intdata.to_bytes(length=self._length, byteorder='little'))
+
+    def _parse_stream(self, stream, context):
+        data = stream.read(self._length)
+        print('ezt olvastam', data, len(data), self._length)
+        if len(data) < self._length:
+            raise ParsingError('Insufficient data length for parsing BitFieldStruct! '
+                               'Expected {} got {}.'.format(self._length, len(data)))
+        intdata = int.from_bytes(data, byteorder='little')
+        obj = {}
+        bitpos = 0
+        for name, bit in self.fields.items():
+            if isinstance(bit, BitPadding):
+                pass
+            elif isinstance(bit, Bit):
+                obj[name] = (intdata >> bitpos) & self._bitmask(bit.bit_size)
+            else:
+                raise TypeError('Only Bit or BitPadding can be in BitFieldStruct!')
+            bitpos += bit.bit_size
+        return obj
+
+    def _sizeof(self, context):
+        return self._length
+
+    def _repr(self):
+        bitfields = ''
+        bitpos = 0
+        for name, bit in self.fields.items():
+            if isinstance(bit, BitPadding):
+                bitfields += '_PAD_[%i:%i]' % (bitpos, bitpos + bit.bit_size - 1)
+            else:
+                bitfields += '%s[%i:%i]' % (name, bitpos, bitpos + bit.bit_size - 1)
+            bitfields += ', '
+            bitpos += bit.bit_size
+        return '{}({}{})'.format(
+            self.__class__.__name__, 'embedded=True' if self._embedded else '',
+            bitfields.rstrip(', ')
         )
 
 
